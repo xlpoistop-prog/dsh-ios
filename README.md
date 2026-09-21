@@ -356,14 +356,19 @@ Standing on:
 * **The jailbreak.** Everything here is downstream of it. This port exists only
   because it is possible to run an unsandboxed binary on a device you own, and
   that is the work of people who gave their time to make it so:
-  * **Relaxin** — the jailbreak this was built and verified against (iOS 17.1.1).
-  * **roothide Bootstrap** — provides the jbroot mechanism that
+  * **[Relaxin](https://github.com/owngoal-dev/Relaxin)** (MIT) — the jailbreak
+    this was built and verified against (iOS 17.1.1). The repository holds the
+    reference sources.
+  * **[roothide Bootstrap](https://github.com/roothide/Bootstrap)** (MIT) — the
+    `roothide` bootstrap for iOS 15–17. It provides the jbroot mechanism that
     [`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md) spends 200 lines
-    untangling. Every pointer in this repo about paths, `mmap` and `dlopen` is a
-    consequence of that design, and it is a design that makes sense once you
-    understand it.
+    untangling. Every note in this repo about paths, `mmap` and `dlopen` is a
+    consequence of that design — and it is a design that holds up once
+    understood. Its [developer documentation](https://github.com/roothide/Developer)
+    is worth reading before writing anything that has to survive a re-jailbreak.
   * **[Dopamine](https://github.com/opa334/Dopamine)** (opa334) and the rootless
-    lineage it established — the approach most of the ecosystem now builds on.
+    lineage it established — the approach most of the ecosystem now builds on,
+    including the roothide work above.
   * **[Procursus](https://github.com/ProcursusTeam/Procursus)** — the bootstrap
     userland supplying the `ldid`, `tar` and `zsh` this installer depends on.
 

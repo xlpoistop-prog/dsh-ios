@@ -88,6 +88,23 @@ Nothing under `node_modules/` is committed. `.gitignore` enforces this.
 
 ---
 
+## Platform prerequisite: the jailbreak
+
+Not a dependency of this software and not redistributed — but nothing here runs
+without it, so it belongs in a notices file.
+
+| Component | License | Role |
+|---|---|---|
+| [Relaxin](https://github.com/owngoal-dev/Relaxin) | MIT | The jailbreak this was built and verified against (iOS 17.1.1) |
+| [roothide Bootstrap](https://github.com/roothide/Bootstrap) | MIT | Provides the jbroot mechanism — see [`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md) |
+| [Procursus](https://github.com/ProcursusTeam/Procursus) | — | The bootstrap userland supplying `ldid`, `tar`, `zsh` |
+
+The jbroot filesystem layout described throughout this repo is a property of
+that design, not of iOS. Anyone adapting this to a **rootless** jailbreak will
+find the namespace section does not apply in the same form.
+
+---
+
 ## Considered and not used
 
 ### `everettjf/dsh-ios`

@@ -332,13 +332,17 @@ docs/                       三份长文设计笔记
 * **越狱本身。** 这个项目完全是它的下游产物。这个移植之所以可能存在，
   只是因为你可以在自己的设备上运行一个不受沙箱限制的二进制 ——
   而那是很多人花时间做出来的：
-  * **Relaxin** —— 本项目构建和验证所基于的越狱（iOS 17.1.1）。
-  * **roothide Bootstrap** —— 提供 jbroot 机制，也就是
+  * **[Relaxin](https://github.com/owngoal-dev/Relaxin)**（MIT）—— 本项目构建和
+    验证所基于的越狱（iOS 17.1.1）。仓库里放的是参考实现源码。
+  * **[roothide Bootstrap](https://github.com/roothide/Bootstrap)**（MIT）——
+    iOS 15–17 的 `roothide` 引导程序。它提供 jbroot 机制，也就是
     [`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md) 花了两百行去理清的东西。
     本仓库里关于路径、`mmap`、`dlopen` 的**每一条结论都是那个设计的后果** ——
-    而且一旦理解了，你会发现它是一个合理的设计。
+    而且一旦理解了，你会发现它是一个站得住脚的设计。
+    它的[开发者文档](https://github.com/roothide/Developer)值得在动手写任何
+    「要能扛过重新越狱」的东西之前读一遍。
   * **[Dopamine](https://github.com/opa334/Dopamine)**（opa334）以及它确立的
-    rootless 路线 —— 现在整个生态大多建立在这个思路上。
+    rootless 路线 —— 现在整个生态大多建立在这个思路上，包括上面的 roothide 系列。
   * **[Procursus](https://github.com/ProcursusTeam/Procursus)** —— 提供 bootstrap 用户态，
     也就是这个安装器依赖的 `ldid`、`tar`、`zsh`。
 
