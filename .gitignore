@@ -1,0 +1,54 @@
+# --- never commit dependencies or fetched artifacts -------------------------
+node_modules/
+vendor/
+dist/
+
+# Node binaries and dependency tarballs are fetched by install.sh / npm.
+# Committing them would add ~120 MB and go stale immediately.
+*.tar.gz
+*.tgz
+*.deb
+node-v*-iphoneos-arm64
+node
+nodejs_*
+
+# macOS/Linux prebuilt binaries that are useless on iOS
+rg
+@vscode/
+
+# --- never commit credentials or session data -------------------------------
+# dsh-home holds .credentials.yaml (your API key) and every session log.
+dsh-home/
+dsh-home-*/
+.credentials.yaml
+settings.yaml
+sessions/
+attachments/
+*.jsonl
+*.jsonl.zstd
+*.zstd
+
+# --- never commit device-specific state -------------------------------------
+# jbroot names change on every re-jailbreak; tokens change on every launch.
+.jbroot-*
+server.pid
+server.log
+dsh-url.txt
+dshfix*.tar
+*.patch.bak
+*.bak
+*.bak-*
+*.orig
+access.log
+
+# --- scratch -----------------------------------------------------------------
+scratch/
+tmp/
+*.tmp
+
+# --- editors / OS ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

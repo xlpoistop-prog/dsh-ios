@@ -1,0 +1,34 @@
+# Normalize line endings on commit, and keep scripts usable on the device.
+#
+# Without this, a Windows checkout commits CRLF into `install.sh` / `start.sh`,
+# and the device then fails with a bare `\r: command not found` — which reads
+# like a corrupted script rather than a line-ending problem.
+#
+# Everything textual is stored with LF. Nothing here needs CRLF.
+
+* text=auto eol=lf
+
+# Shell scripts must be LF, explicitly and unconditionally.
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.zsh   text eol=lf
+
+# JS/JSON sources.
+*.js    text eol=lf
+*.cjs   text eol=lf
+*.mjs   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.plist text eol=lf
+
+# Test fixtures: byte-exact, never touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+
+# Patched DSH build output — large generated files, do not diff.
+patched/*.js -diff linguist-generated

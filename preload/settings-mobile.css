@@ -1,0 +1,142 @@
+/*
+ * DSH Web - iPhone fix for the Settings dialog.
+ *
+ * Why this exists
+ * ---------------
+ * The shipped dialog is laid out for desktop. Measured on iPhone 15 (393 CSS px):
+ *
+ *   .VOzbGW_panel   width: 800px, max-width: calc(100vw - 48px)   -> 345px
+ *   .VOzbGW_nav     flex: none, width: 188px                      -> 188px
+ *   .VOzbGW_content flex: 1                                       -> 157px
+ *   .VOzbGW_options padding: 0 24px 24px                          -> 109px
+ *   .*_rowText      flex: 1, min-width: 0, padding-right: 48px
+ *   .*_selector     ~112px (pill + chevron)
+ *
+ * 109 - 112 - 48 < 0, so the label box collapses and Chinese labels wrap one
+ * character per line ("选/择/新/会/话/的/默/认/权/限/模/式"). The same squeeze
+ * makes the theme cards and every other row awkward.
+ *
+ * What this does (below 600px only)
+ * ---------------------------------
+ *   1. the panel fills the viewport, so no width is lost to the 48px margin;
+ *   2. the 188px text rail becomes a 56px icon rail, giving the content column
+ *      337px instead of 157px;
+ *   3. options gutter 24px -> 14px and row-text reserve 48px -> 8px, so titles
+ *      and descriptions fit on one line and the selector keeps its own room;
+ *   4. the close control grows from 28px to a 36px touch target.
+ *
+ * Nothing above 600px is touched, and no rule sets colours, fonts or radii, so
+ * the dialog keeps its normal appearance.
+ *
+ * Caveat: the plugin class names below are content-hashed CSS-module names of
+ * THIS build. Re-check them after upgrading @deepseek-ai/dsh; if a hash changed
+ * the rule silently stops matching (nothing else breaks).
+ *
+ * Loaded from dist/index.html after the built shell sheets. Each plugin injects
+ * its own <style> into <head> at runtime - that is, after this file - so every
+ * rule below out-specifies the plugin with an `html body` prefix rather than
+ * reaching for !important.
+ */
+
+@media (max-width: 600px) {
+  /* --- 1. Panel: fill the viewport ------------------------------------- */
+  /* height:100% of the fixed overlay (not 100dvh) so the panel can never turn
+     out taller than the box that centres it - that offset is what clips the
+     first row of a section. Stretching removes the centring maths entirely. */
+  html body .VOzbGW_overlay {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  html body .VOzbGW_panel {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+
+  /* --- 2. Section rail -> icon rail ------------------------------------ */
+  html body .VOzbGW_nav {
+    width: 56px;
+    gap: 12px;
+    padding: 16px 8px 0;
+  }
+
+  html body .VOzbGW_navTitle {
+    padding: 0;
+    font-size: 13px;
+    line-height: 20px;
+    text-align: center;
+  }
+
+  html body .VOzbGW_navList {
+    gap: 6px;
+  }
+
+  html body .VOzbGW_navCell {
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin: 0 auto;
+    padding: 0;
+    border-radius: 12px;
+  }
+
+  /* The icon carries the section; the rail is too narrow for the label. */
+  html body .VOzbGW_navLabel {
+    display: none;
+  }
+
+  /* --- 3. Header and content gutters ----------------------------------- */
+  html body .VOzbGW_header {
+    align-items: center;
+    height: auto;
+    padding: 14px 12px 6px 4px;
+  }
+
+  html body .VOzbGW_close {
+    width: 36px;
+    height: 36px;
+    border-radius: 36px;
+  }
+
+  html body .VOzbGW_options {
+    padding: 0 14px 20px;
+  }
+
+  /* --- 4. Preference rows: title/description on one line ---------------- */
+  html body .oY77xG_row,
+  html body .hVGvvW_row {
+    gap: 6px;
+    padding: 14px 0;
+  }
+
+  html body .oY77xG_rowText,
+  html body .hVGvvW_rowText {
+    padding-right: 8px;
+  }
+}
+
+/*
+ * Very narrow phones (iPhone SE 1st gen, 320px): even with the icon rail the
+ * label column gets too tight next to the selector, so stack the row instead.
+ */
+@media (max-width: 360px) {
+  html body .oY77xG_row,
+  html body .hVGvvW_row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  html body .oY77xG_rowText,
+  html body .hVGvvW_rowText {
+    padding-right: 0;
+  }
+
+  html body .oY77xG_selector,
+  html body .hVGvvW_selector {
+    align-self: flex-start;
+  }
+}

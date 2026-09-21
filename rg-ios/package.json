@@ -1,0 +1,8 @@
+{
+  "name": "@vscode/ripgrep-ios-arm64",
+  "version": "1.18.0",
+  "description": "JavaScript rg replacement for iOS, where no ripgrep binary exists. Implements the --files and --json shapes that @deepseek-ai/dsh-tool-fs-search uses.",
+  "bin": {
+    "rg": "bin/rg"
+  }
+}

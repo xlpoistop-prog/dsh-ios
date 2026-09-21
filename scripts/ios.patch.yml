@@ -1,0 +1,10 @@
+# iOS profile overlay.
+#
+# `shell-env` stays ENABLED: it provides the `shellEnv` service that the shipped
+# `standard` agent preset's `tool-bash` row injects. Disabling it makes session
+# creation fail, which surfaced as the workspace picker silently reverting.
+#
+# `tool-fs-search` stays ENABLED: @vscode/ripgrep-ios-arm64 is provided by
+# install-rg-wrapper.sh, so glob/grep resolve without a ripgrep binary.
+- id: tool-pwsh
+  disabled: true

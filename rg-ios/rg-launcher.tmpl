@@ -1,0 +1,19 @@
+#!/var/mobile/Documents/node22/node
+/**
+ * Launcher for the JavaScript rg replacement.
+ *
+ * This file is extension-less on purpose: dsh resolves it as
+ * `@vscode/ripgrep-ios-arm64/bin/rg` and spawns it as a command, so it must be
+ * directly executable. Node treats an extension-less file as CommonJS, strips
+ * the shebang, and the dynamic import below reaches the ESM implementation
+ * relative to this file.
+ *
+ * The previous version used a bash stub to exec Node; that added a second
+ * interpreter and a path-resolution step that failed (the spawner's jbroot view
+ * and the shell's differ), so the implementation never ran. One interpreter,
+ * one relative import.
+ */
+import('./rg-impl.mjs').catch((error) => {
+  process.stderr.write(`rg: ${error && error.message ? error.message : String(error)}\n`)
+  process.exit(2)
+})
