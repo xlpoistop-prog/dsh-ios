@@ -7,49 +7,53 @@ on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 
 ## Quick start
 
-**First, one question: can you already reach the phone over SSH from this
-computer?**
-
-* **Yes** — run the three commands below. The script picks up from there.
-* **No** — read [Install](#install) first: jailbreak, OpenSSH on the phone,
-  PuTTY on this side. Come back once that works. **The script cannot do this
-  part for you** — every SSH route to the phone ends at `sshd` running *on the
-  phone*.
+**Fastest route: put the phone and the computer on the same Wi-Fi, then run
+these three lines.**
 
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
-./bootstrap.sh --device mobile@127.0.0.1 --password <pw>
+./bootstrap.sh
 ```
 
-**Those three lines are the whole thing.** Run them and it is installed.
+**No IP to look up, no arguments to work out.** The script finds the phone
+itself — first checking whether anything is listening on `127.0.0.1` (a
+USB-forwarded channel), otherwise scanning this computer's own subnet for SSH
+servers (by reading their banners, not by testing whether the port is open) —
+**and then asks for the password**, the one the jailbreak asked you to set
+(`alpine` if you never set one).
+
+**So in the common case it is those three lines and one password.**
 
 > If you would rather look before leaping, add `--dry-run` to the last line. It
-> prints what it intends to do and **changes nothing**; when it looks right,
-> remove `--dry-run` and run it again.
+> prints what it intends to do and **changes nothing**.
 
-**What those lines mean.** The script runs **on your computer**, not on the
-phone — it drives the **phone** over SSH:
+**Prerequisites the script cannot install for you:** a jailbroken phone with
+**OpenSSH** (`openssh-server` from Sileo), and **PuTTY** on Windows or the
+built-in `ssh` elsewhere. See [Install](#install).
+
+### Specifying the connection yourself
+
+For the cases the search cannot cover, or when it fails:
+
+| Your setup | Pass |
+|---|---|
+| **Wi-Fi, same network** | `--device mobile@<phone IP>` from Settings → Wi-Fi |
+| **i4Tools' "open SSH channel"** | `--device mobile@127.0.0.1` — it forwards the phone's port 22 to your local port 22 over USB |
+| **`iproxy`** (libimobiledevice) | `--device mobile@127.0.0.1 --port <the port you forwarded>` |
+| **Any other tunnel** | `--device mobile@<host> --port <port>` |
+| **Prefer not to type the password** | omit `--password` and it prompts, with echo off |
 
 | Argument | Meaning |
 |---|---|
-| `git clone` / `cd` | Fetch this repo and enter it. |
-| `--device USER@HOST` | **How to reach the phone.** `mobile` is the account name **on the phone** (iOS always has `root` and `mobile`; use `mobile`, since root login is normally disabled). What goes in `HOST` depends on how you connect — see below. |
-| `--password <pw>` | The password for the `mobile` account **on the phone** — **the one the jailbreak asked you to set when it succeeded**. If you were never asked, OpenSSH's default is `alpine`. |
-| `--dry-run` | Prints what it intends to do and **changes nothing**. Optional; worth adding the first time. |
+| `--device USER@HOST` | **How to reach the phone.** `mobile` is the account name **on the phone** (iOS always has `root` and `mobile`; use `mobile`, since root login is normally disabled). Omit it and the script searches. |
+| `--password <pw>` | The password for the `mobile` account **on the phone** — the one the jailbreak asked you to set (`alpine` if you never did). Omit it and it prompts. |
+| `--dry-run` | Prints what it intends to do and **changes nothing**. |
+| `--key <file>` | Use an SSH private key instead of a password. |
+| `--hostkey <fp>` | Pin the host key (by default it is learned on first contact). |
 
-**What to put in `HOST` depends on how your computer reaches the phone:**
-
-| Your setup | Use |
-|---|---|
-| **i4Tools' "open SSH channel"** | `mobile@127.0.0.1` — it forwards the phone's port 22 to your local port 22 over USB. Assumes nothing else is already on your port 22. |
-| **Wi-Fi, same network** | `mobile@<phone IP>` from Settings → Wi-Fi. **No i4Tools needed.** |
-| **`iproxy`** (libimobiledevice) | `mobile@127.0.0.1 --port <the port you forwarded>` |
-| **Any other tunnel** | `mobile@<host> --port <port>` |
-
-> **`127.0.0.1` is not a universal answer.** It is only the i4Tools default,
-> because that tool happens to forward to local port 22. **Nothing here requires
-> i4Tools** — Wi-Fi or any other forwarder works. Add `--port` when it is not 22.
+> **Nothing here requires i4Tools.** `127.0.0.1` is simply one of the things the
+> search tries; Wi-Fi or any other forwarder works.
 
 **Then `bootstrap.sh` does the rest by itself:**
 
