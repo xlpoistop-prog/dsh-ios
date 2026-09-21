@@ -49,11 +49,6 @@ On Windows the PuTTY suite (`plink` + `pscp`) is enough, and **i4Tools' SSH
 channel needs no OpenSSH on the device** — it tunnels over usbmuxd. That matters
 here: it means SSH is available even before you have installed anything.
 
-> Note for later: on some networks `github.com` is blocked at the TLS layer
-> while `api.github.com` and `ssh.github.com` work. If `git push` over HTTPS
-> fails with a reset connection despite TCP connecting, try
-> `ssh.github.com:443` — see the SSH config note at the end of this file.
-
 ---
 
 ## 1. Get Node 22 for iOS
@@ -236,59 +231,3 @@ server log with the `tools/diag-overlay.js` banner installed — see
 **Everything is slow.** Expected. `--jitless` interprets; there is no
 optimising compiler. Prefer starting a fresh session over continuing a very long
 one, and expect the first seconds after launch to be busy.
-
----
-
-## Appendix: pushing to GitHub from a network that blocks it
-
-Encountered while publishing this repo, and worth writing down because the
-symptom is misleading.
-
-On some networks `github.com` is blocked at the **TLS** layer while everything
-else on the same host works. The tell:
-
-```sh
-# TCP connects fine …
-Test-NetConnection github.com -Port 443        # → True
-
-# … but git cannot get through
-git push
-# fatal: unable to access 'https://github.com/…': Recv failure: Connection was reset
-```
-
-Meanwhile `api.github.com` and `raw.githubusercontent.com` answer normally. So
-the block is selective and specific to that hostname, not a general outage — and
-intermittent, which is why the first push may have succeeded.
-
-**Workaround: SSH over port 443.** GitHub serves SSH on `ssh.github.com:443`,
-which was reachable when plain HTTPS was not. Register a key, then point
-`github.com` at it:
-
-```
-# ~/.ssh/config
-Host github.com
-  HostName ssh.github.com
-  Port 443
-  User git
-  IdentityFile ~/.ssh/github_ed25519
-  IdentitiesOnly yes
-```
-
-```sh
-git remote set-url origin git@github.com:<user>/<repo>.git
-ssh -T git@github.com     # expect: "Hi <user>! You've successfully authenticated…"
-git push
-```
-
-`does not provide shell access` in that message is normal — GitHub's SSH is for
-git only.
-
-Two things to get right on the GitHub side, both easy to trip over: the **title**
-field takes a label like `dsh-ios desktop`, and the **key** field takes the whole
-`.pub` line including the trailing comment. Pasting them the wrong way round is
-survivable — the page will tell you the key is invalid — but pasting a
-*truncated* key is not, so copy the entire line.
-
-A working proxy also fixes this, of course. The SSH route is worth knowing
-because it does not require one.
-
