@@ -180,13 +180,39 @@ i4Tools 的方便之处在于它**走 USB（usbmuxd）转发本地端口**，所
 
 ## 安装
 
-前置：**已越狱**设备，且已有 **Node 22**、`ldid`、`tar`。从零开始看
-[`docs/install-from-scratch.md`](docs/install-from-scratch.md)。
+两个入口，看你从哪开始。
+
+### 桌面端一条命令
+
+如果设备已越狱、且 SSH 可达，这条命令全干完 —— 检查设备、拉 Node、
+**在本机构建 DSH 树**（npm 和网络在这边，不在手机上）、全部推过去、适配、启动：
 
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
-bash install.sh
+./bootstrap.sh --device mobile@127.0.0.1 --password <密码> --dry-run   # 先看计划
+./bootstrap.sh --device mobile@127.0.0.1 --password <密码>
+```
+
+**幂等**：已经有的东西不动。其余参数看 `--help`
+（`--key`、`--hostkey`、`--install-dir`、`--skip-node`、`--skip-dsh` …）。
+
+Windows 上它用 PuTTY 的 `plink`/`pscp` —— 因为 Windows 自带的 OpenSSH
+**无法非交互地接受密码**，而 `sshpass` 又基本没有。脚本会在 `PATH`
+和常见安装位置里找；装在别处就用 `PLINK=` / `PSCP=` 指定。
+
+**它装不了越狱、装不了终端、也装不了 SSH 服务端。** 这些必须先有，绕不过去 ——
+**通往设备的 SSH 通道，末端是设备上的 `sshd`。** 见
+[`docs/install-from-scratch.md`](docs/install-from-scratch.md)。
+
+### 已经装好 Node + DSH？只做适配
+
+前置：**已越狱**设备，且已有 **Node 22**、`ldid`、`tar`。
+
+```sh
+git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
+cd dsh-ios
+sh install.sh
 ```
 
 `install.sh` **幂等**，支持 `--dry-run`。它会：

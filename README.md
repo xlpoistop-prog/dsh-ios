@@ -195,14 +195,43 @@ before debugging anything on this platform.**
 
 ## Install
 
-Requirements: a **jailbroken** device with **Node 22 already present**, `ldid`,
-and `tar`. If you are starting from nothing, see
-[`docs/install-from-scratch.md`](docs/install-from-scratch.md).
+Two entry points, depending on where you are starting from.
+
+### One command, from a desktop
+
+If you have a jailbroken device reachable over SSH, this does everything —
+checks the device, fetches Node, builds the DSH tree here (npm and the network
+are on this side, not there), copies it all over, adapts it, and starts it:
 
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
-bash install.sh
+./bootstrap.sh --device mobile@127.0.0.1 --password <pw> --dry-run   # see the plan
+./bootstrap.sh --device mobile@127.0.0.1 --password <pw>
+```
+
+It is idempotent: anything already present is left alone. Run `--help` for the
+rest (`--key`, `--hostkey`, `--install-dir`, `--skip-node`, `--skip-dsh`, …).
+
+On Windows it uses PuTTY's `plink`/`pscp`, because Windows OpenSSH cannot take a
+password non-interactively and `sshpass` is rarely present. It looks for them
+on `PATH` and in the usual install locations; point at them with `PLINK=`/`PSCP=`
+if they live somewhere else.
+
+**It cannot install the jailbreak, a terminal, or an SSH server.** Those come
+first, and there is no way around them — an SSH channel to the device needs
+`sshd` *on the device*. See
+[`docs/install-from-scratch.md`](docs/install-from-scratch.md).
+
+### Already have Node + DSH? Just adapt
+
+Requirements: a **jailbroken** device with **Node 22 already present**, `ldid`,
+and `tar`.
+
+```sh
+git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
+cd dsh-ios
+sh install.sh
 ```
 
 `install.sh` is idempotent and dry-runnable (`--dry-run`). It will:
