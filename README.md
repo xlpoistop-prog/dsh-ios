@@ -7,14 +7,14 @@ on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 
 ## Quick start
 
-> **⚠️ Before running the command below, check two things:**
->
-> 1. the phone is **jailbroken**, and
-> 2. **OpenSSH is installed on it** (`openssh-server` from Sileo) and you can
->    **already reach it over SSH from this computer**.
->
-> **Without both, the command below fails immediately.** Full prerequisites are
-> in [Install](#install).
+**First, one question: can you already reach the phone over SSH from this
+computer?**
+
+* **Yes** — run the three commands below. The script picks up from there.
+* **No** — read [Install](#install) first: jailbreak, OpenSSH on the phone,
+  PuTTY on this side. Come back once that works. **The script cannot do this
+  part for you** — every SSH route to the phone ends at `sshd` running *on the
+  phone*.
 
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git

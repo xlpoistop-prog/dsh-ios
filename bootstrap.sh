@@ -64,7 +64,7 @@ Options:
                           otherwise SSH keys are used
   --key FILE              SSH private key
   --hostkey FINGERPRINT   Expected host key, e.g. SHA256:abc...
-  --install-dir DIR       Device install location   (default /var/mobile/Documents/dsh-ios)
+  --install-dir DIR       Phone install location   (default /var/mobile/Documents/dsh-ios)
   --dsh-version V         @deepseek-ai/dsh version  (default: latest)
   --node-url URL          Fetch Node from here instead
   --skip-node             Do not install Node
@@ -251,13 +251,19 @@ STAGE="/var/mobile/Documents/.dsh-ios-stage"
 
 # ---------------------------------------------------------------------------
 # preflight
+#
+# The connection is the first thing that can fail and the one failure a reader is
+# least equipped to diagnose, so it is probed first and reported explicitly --
+# success included. Someone who already had SSH working should be able to see
+# that the script noticed and moved on, rather than inferring it from silence.
 # ---------------------------------------------------------------------------
-step "device"
+step "connection"
 
-dev "uname -s" >/dev/null 2>&1 || die "cannot reach $DEVICE.
+if ! dev "uname -s" >/dev/null 2>&1; then
+  die "cannot reach $DEVICE.
 
-   This script requires an SSH connection to the phone that already works. The
-   usual causes, most common first:
+   This script requires an SSH connection to the phone that already works — it
+   does not set one up. The usual causes, most common first:
 
      1. OpenSSH is not installed on the phone.
         Install openssh-server from Sileo. Every SSH client -- including
@@ -275,25 +281,34 @@ dev "uname -s" >/dev/null 2>&1 || die "cannot reach $DEVICE.
 
      4. The phone is not jailbroken, or the jailbreak is not active.
 
-   Test it on its own first:
+   Test the connection on its own first -- if this fails, nothing here will work:
 
      plink -ssh -pw <pw> mobile@127.0.0.1 \"echo ok\"
      ssh -o StrictHostKeyChecking=accept-new mobile@127.0.0.1 \"echo ok\""
+fi
+
+note "connected to $DEVICE — skipping straight to the install"
 
 OS_NAME="$(dev 'uname -s' 2>/dev/null | tr -d '\r')"
-[ "$OS_NAME" = "Darwin" ] || die "device reports uname -s = '$OS_NAME'; expected Darwin (iOS)"
+[ "$OS_NAME" = "Darwin" ] || die "the phone reports uname -s = '$OS_NAME'; expected Darwin (iOS).
+   You are probably connected to something that is not the phone."
 
 JB="$(dev 'jbroot 2>/dev/null || echo NONE' | tr -d '\r')"
 if [ "$JB" = "NONE" ] || [ -z "$JB" ]; then
-  die "no jbroot on the device — it does not look jailbroken, or the shell is not the jailbreak's."
+  die "no jbroot on the phone — it does not look jailbroken, or the shell is not
+   the jailbreak's. Note this checks the phone's shell, not the computer's."
 fi
 note "jbroot: $JB"
 
 HAS_LDID="$(dev 'command -v ldid >/dev/null 2>&1 && echo yes || echo no' | tr -d '\r')"
-[ "$HAS_LDID" = "yes" ] && note "ldid: present" || warn "ldid missing — the native addons cannot be re-signed and the terminal will not load"
+if [ "$HAS_LDID" = "yes" ]; then
+  note "ldid: present"
+else
+  warn "ldid missing — the native addons cannot be re-signed and the terminal will not load"
+fi
 
 HAS_TAR="$(dev 'command -v tar >/dev/null 2>&1 && echo yes || echo no' | tr -d '\r')"
-[ "$HAS_TAR" = "yes" ] || die "no tar on the device"
+[ "$HAS_TAR" = "yes" ] || die "no tar on the phone"
 
 mutate "mkdir -p '$STAGE'" >/dev/null 2>&1 || true
 
@@ -331,7 +346,7 @@ else
   fi
   if [ -n "$GOT" ]; then note "sha256 ok"; fi
 
-  say "   pushing to device"
+  say "   pushing to phone"
   push "$WORK/$NODE_BIN" "/var/mobile/Documents" "$NODE_BIN"
   mutate "mkdir -p '$INSTALL_DIR' && cp '/rootfs/var/mobile/Documents/$NODE_BIN' '$INSTALL_DIR/node' && chmod 755 '$INSTALL_DIR/node'"
 
@@ -358,14 +373,14 @@ if [ "$SKIP_DSH" = "1" ]; then
 elif [ "$TREE_OK" != "no" ]; then
   note "already present"
 else
-  command -v npm >/dev/null 2>&1 || die "no npm on this machine, and the device has no DSH tree.
+  command -v npm >/dev/null 2>&1 || die "no npm on this machine, and the phone has no DSH tree.
    Install Node.js on the desktop (which brings npm), or copy a tree over by
    hand — see docs/install-from-scratch.md."
 
   [ -n "$WORK" ] || { WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT INT TERM; }
 
   say "   npm install @deepseek-ai/dsh${DSH_VERSION:+@$DSH_VERSION}"
-  note "this is ~265 MB and takes a while; it is done here because the device"
+  note "this is ~265 MB and takes a while; it is done here because the phone"
   note "has no npm and a much slower network"
   if [ "$DRY_RUN" = "1" ]; then
     printf '   [dry-run] npm install in %s\n' "$WORK/dsh-tree"
@@ -418,7 +433,7 @@ step "4/4  install.sh"
 if [ "$DRY_RUN" = "1" ]; then
   printf '   [dry-run] device: cd %s && sh install.sh --dry-run\n' "$INSTALL_DIR"
 else
-  dev "cd '$INSTALL_DIR' && sh install.sh" || die "install.sh failed on the device"
+  dev "cd '$INSTALL_DIR' && sh install.sh" || die "install.sh failed on the phone"
 fi
 
 # ---------------------------------------------------------------------------
@@ -426,7 +441,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$SKIP_START" = "1" ]; then
   step "done"
-  say "Installed. Start it on the device with:"
+  say "Installed. Start it on the phone with:"
   say ""
   say "    cd $INSTALL_DIR && sh scripts/start.sh"
   exit 0
@@ -440,11 +455,11 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 # start.sh polls for the banner and prints the URL, so capture it as-is.
-dev "cd '$INSTALL_DIR' && sh scripts/start.sh" || die "start.sh failed on the device"
+dev "cd '$INSTALL_DIR' && sh scripts/start.sh" || die "start.sh failed on the phone"
 
 cat <<EOF
 
-$(printf '%s' "$B")Open the printed URL in Safari on the device.$(printf '%s' "$R")
+$(printf '%s' "$B")Open the printed URL in Safari on the phone.$(printf '%s' "$R")
 
 The token is only needed once — Safari keeps the cookie, so plain
 127.0.0.1:3080 works afterwards.
