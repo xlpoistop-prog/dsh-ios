@@ -11,14 +11,31 @@
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
 
-./bootstrap.sh --device mobile@127.0.0.1 --password <密码> --dry-run   # 先看计划，不改任何东西
-./bootstrap.sh --device mobile@127.0.0.1 --password <密码>
+./bootstrap.sh --device mobile@127.0.0.1 --password <密码> --dry-run   # 1. 先看计划
+./bootstrap.sh --device mobile@127.0.0.1 --password <密码>            # 2. 真装
 ```
 
-然后在**设备的 Safari** 里打开打印出来的 `http://127.0.0.1:3080/?token=…`，
-把权限模式设为**完全权限** —— `workspace-write` 在 iOS 上没有可用的沙箱后端。
+**这几个参数是什么意思。** 脚本跑在**你的电脑上**，不在手机上 —— 它是通过 SSH 去操作手机：
 
-**这条命令要跑通，设备上需要：** 越狱、[NewTerm](https://repo.chariz.com/)、
+| 参数 | 含义 |
+|---|---|
+| `git clone` / `cd` | 把仓库拉到本机并进入目录。 |
+| `--device mobile@127.0.0.1` | 手机的 SSH 地址。`mobile` 是设备上的用户名。`127.0.0.1` 只在**用 i4Tools 的 USB 转发通道时**是对的；走 Wi-Fi 就换成手机 IP，比如 `--device mobile@192.168.1.23`。 |
+| `--password <密码>` | 手机 SSH 的密码 —— 你装 OpenSSH 时设的那个。 |
+| `--dry-run` | **先跑这一条。** 它只打印打算做什么，**不改任何东西**。看着没问题，再跑下面那条（去掉 `--dry-run`）。 |
+
+**然后 `bootstrap.sh` 会自己把剩下的做完：**
+
+1. 检查设备 —— 越狱、`jbroot`、`ldid`、`tar`，以及 Node 和 DSH 树在不在
+2. Node 缺 → 下载钉死的构建、**校验 sha256**、推过去
+3. DSH 树缺 → **在你电脑上** `npm install`（npm 和快网络都在这边）、打包、推过去
+4. 推仓库内容 → 在设备上跑 `install.sh` → 启动
+5. 打印一个 `http://127.0.0.1:3080/?token=…`
+
+**最后**在**设备的 Safari** 里打开那个 URL，把权限模式设为**完全权限** ——
+`workspace-write` 在 iOS 上没有可用的沙箱后端。
+
+**脚本要能跑通，设备上需要：** 越狱、[NewTerm](https://repo.chariz.com/)、
 Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
 **电脑上需要：** Windows 上 PuTTY（`plink`+`pscp`），其他系统 `ssh`+`scp`。
 下面的[安装](#安装)章节有完整步骤 —— 包括**为什么 i4Tools 在没装 OpenSSH 时也报「成功」**。

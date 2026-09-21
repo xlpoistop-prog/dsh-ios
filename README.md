@@ -11,18 +11,36 @@ on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
 
-# see what it would do, change nothing
-./bootstrap.sh --device mobile@127.0.0.1 --password <pw> --dry-run
-
-# do it
-./bootstrap.sh --device mobile@127.0.0.1 --password <pw>
+./bootstrap.sh --device mobile@127.0.0.1 --password <pw> --dry-run   # 1. look first
+./bootstrap.sh --device mobile@127.0.0.1 --password <pw>             # 2. do it
 ```
 
-Then open the printed `http://127.0.0.1:3080/?token=…` in **Safari on the
-device**, and set the permission mode to **full access** — `workspace-write`
-has no sandbox backend able to start on iOS.
+**What those lines mean.** The script runs **on your computer**, not on the
+phone — it drives the phone over SSH:
 
-**Before that command can work you need, on the device:** a jailbreak,
+| Argument | Meaning |
+|---|---|
+| `git clone` / `cd` | Fetch this repo and enter it. |
+| `--device mobile@127.0.0.1` | The phone's SSH address. `mobile` is the device username. `127.0.0.1` is right **when you are using i4Tools' USB-forwarded channel**; over Wi-Fi use the phone's IP instead (`--device mobile@192.168.1.23`). |
+| `--password <pw>` | The phone's SSH password — the one you set when installing OpenSSH. |
+| `--dry-run` | **Run this one first.** It prints what it intends to do and changes nothing. If it looks right, run the second line without it. |
+
+**Then `bootstrap.sh` does the rest by itself:**
+
+1. checks the device — jailbreak, `jbroot`, `ldid`, `tar`, and whether Node and
+   the DSH tree are already there,
+2. if Node is missing, downloads the pinned build, **verifies its sha256**, and
+   copies it across,
+3. if the DSH tree is missing, runs `npm install` **on your computer** (which is
+   where npm and a fast network are), packs it, and copies it across,
+4. copies this repo across, runs `install.sh` on the device, and starts it,
+5. prints a `http://127.0.0.1:3080/?token=…` URL.
+
+**Finally**, open that URL in **Safari on the device** and set the permission
+mode to **full access** — `workspace-write` has no sandbox backend able to start
+on iOS.
+
+**Before the script can work you need, on the device:** a jailbreak,
 [NewTerm](https://repo.chariz.com/), **`openssh-server`** from Sileo, and
 `ldid` + `tar`. **On the computer:** PuTTY (`plink`+`pscp`) on Windows, or
 `ssh`+`scp` elsewhere. The [Install](#install) section below walks through all
