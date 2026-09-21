@@ -72,9 +72,15 @@ nothing beyond `sh`.
 Everything works from NewTerm alone. What SSH changes is how fast you can debug:
 copy files with `pscp`/`scp` instead of retyping, run commands and read their
 output directly instead of transcribing by hand, and iterate without switching
-apps. This port was debugged over SSH, and the difference is not marginal. On
-Windows, i4Tools' SSH channel is enough and needs **no OpenSSH on the device** —
-it tunnels over usbmuxd.
+apps. This port was debugged over SSH, and the difference is not marginal.
+
+**An SSH server must be installed on the device** — OpenSSH from the jailbreak
+repos. There is no way around this: any client, including i4Tools' channel, ends
+up talking to `sshd` *on the device*. i4Tools is convenient because it forwards
+a local port over USB (usbmuxd), so no device IP or Wi-Fi is needed — but it is
+a forwarder, not a server. Uninstalling OpenSSH makes it return
+`Connection refused` while the i4Tools UI still cheerfully reports success, since
+that dialog only reports that the tunnel was created, not that anything answered.
 
 **The token is only needed once.** Safari keeps the cookie that
 `?token=…` sets, so after opening the full URL a single time, plain

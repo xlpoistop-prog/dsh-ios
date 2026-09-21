@@ -2,8 +2,7 @@
 
 `install.sh` assumes Node 22 and a DSH tree are already on the device. This is
 how to get those there. Written for a jailbroken device reachable over SSH from
-a desktop machine (i4Tools' SSH channel works and needs no OpenSSH on the
-device — it tunnels over usbmuxd).
+a desktop machine.
 
 Throughout: **run device commands in the device's shell**, not through Node's
 view of the filesystem. See [`jbroot-namespaces.md`](jbroot-namespaces.md) for
@@ -29,6 +28,12 @@ described in [`jbroot-namespaces.md`](jbroot-namespaces.md) in the same form.
   native addons. Almost every bootstrap ships it; check with `which ldid`.
 * **`tar`** on the device. There is typically **no `gzip`** — see the
   decompression recipe below.
+* **An SSH server on the device** — `openssh-server` from the jailbreak repos —
+  if you want to work over SSH. This is not optional for remote access: every
+  client ends up talking to `sshd` **on the device**, including i4Tools' channel,
+  which only forwards a local port over USB (usbmuxd). Removing OpenSSH makes it
+  fail with `Connection refused` while the i4Tools dialog still reports success,
+  because that dialog only says the tunnel was created.
 * **A terminal on the device.** [NewTerm](https://repo.chariz.com/) is what this
   was built with. Any POSIX shell should do; the scripts assume nothing beyond
   `sh`.
@@ -45,9 +50,9 @@ that way:
 * run a command and read its output directly, instead of transcribing it by hand
 * iterate without switching apps
 
-On Windows the PuTTY suite (`plink` + `pscp`) is enough, and **i4Tools' SSH
-channel needs no OpenSSH on the device** — it tunnels over usbmuxd. That matters
-here: it means SSH is available even before you have installed anything.
+On Windows the PuTTY suite (`plink` + `pscp`) is enough. i4Tools' channel is the
+convenient way to reach the device because it needs no device IP or Wi-Fi — but
+it is a **forwarder, not a server**, so OpenSSH still has to be installed.
 
 ---
 
