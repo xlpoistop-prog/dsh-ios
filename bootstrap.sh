@@ -216,6 +216,16 @@ dev() {
   if [ "$MODE" = "putty" ]; then plink_cmd "$1"; else ssh_cmd "$1"; fi
 }
 
+# Same, for the short value probes.
+#
+# plink announces the keyboard-interactive exchange on stderr for every single
+# call -- two lines each time. Across a dozen probes that is most of the output,
+# and it buries the lines that matter. stderr is dropped only here, and kept
+# everywhere else, because a failing install.sh reports on stderr.
+dev_q() {
+  dev "$1" 2>/dev/null
+}
+
 # Run a command that changes something. Skipped under --dry-run.
 mutate() {
   if [ "$DRY_RUN" = "1" ]; then
@@ -250,6 +260,32 @@ push() {  # push <local> <dirname-under-/rootfs> [newname]
 STAGE="/var/mobile/Documents/.dsh-ios-stage"
 
 # ---------------------------------------------------------------------------
+# host key
+#
+# plink -batch refuses an unknown host outright -- "The host key is not cached
+# for this server" -- and it does not cache a key that was supplied via
+# -hostkey, so every call has to carry one. Its interactive prompt cannot be
+# answered from piped stdin either (it wants a terminal), so the only workable
+# approach is to read the fingerprint out of plink's own complaint and pin that
+# for the rest of the run.
+#
+# This is trust-on-first-use, which is what ssh(1) does by default. Being
+# explicit that the first connection is therefore unverified, the fingerprint is
+# printed, and --hostkey exists for pinning one out of band.
+#
+# OpenSSH needs none of this; ssh_opts already passes accept-new.
+# ---------------------------------------------------------------------------
+if [ "$MODE" = "putty" ] && [ -z "$HOSTKEY" ]; then
+  # -batch makes this fail fast (about half a second) instead of prompting.
+  HOSTKEY="$( "$PLINK_BIN" -ssh -batch -pw "$PASSWORD" "$DEVICE" "exit" 2>&1 \
+              | grep -o 'SHA256:[A-Za-z0-9+/=]*' | head -1 )"
+  if [ -n "$HOSTKEY" ]; then
+    note "host key: $HOSTKEY"
+    note "  (learned on first contact; pin it with --hostkey to verify it)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # preflight
 #
 # The connection is the first thing that can fail and the one failure a reader is
@@ -259,8 +295,27 @@ STAGE="/var/mobile/Documents/.dsh-ios-stage"
 # ---------------------------------------------------------------------------
 step "connection"
 
-if ! dev "uname -s" >/dev/null 2>&1; then
+# Capture the client's own words on failure. 'cannot reach' alone is not
+# actionable -- 'Connection refused', 'host key is not cached' and 'access
+# denied' have entirely different fixes, and plink says which one it is.
+#
+# The status has to be caught on the same line. Under `set -e`, a bare
+# `VAR="$(failing command)"` terminates the script at the assignment, so
+# `CONN_RC=$?` on the following line would never run and the diagnosis would
+# never print.
+#
+# plink's keyboard-interactive announcement is filtered here as everywhere else,
+# or it would bury the real message.
+CONN_RC=0
+CONN_OUT="$(dev "uname -s" 2>&1)" || CONN_RC=$?
+CONN_OUT="$(printf '%s\n' "$CONN_OUT" | grep -v -e 'Keyboard-interactive')"
+
+if [ "$CONN_RC" -ne 0 ]; then
   die "cannot reach $DEVICE.
+
+   The SSH client said:
+
+$(printf '%s\n' "$CONN_OUT" | sed 's/^/     /')
 
    This script requires an SSH connection to the phone that already works — it
    does not set one up. The usual causes, most common first:
@@ -293,21 +348,21 @@ OS_NAME="$(dev 'uname -s' 2>/dev/null | tr -d '\r')"
 [ "$OS_NAME" = "Darwin" ] || die "the phone reports uname -s = '$OS_NAME'; expected Darwin (iOS).
    You are probably connected to something that is not the phone."
 
-JB="$(dev 'jbroot 2>/dev/null || echo NONE' | tr -d '\r')"
+JB="$(dev_q 'jbroot 2>/dev/null || echo NONE' | tr -d '\r')"
 if [ "$JB" = "NONE" ] || [ -z "$JB" ]; then
   die "no jbroot on the phone — it does not look jailbroken, or the shell is not
    the jailbreak's. Note this checks the phone's shell, not the computer's."
 fi
 note "jbroot: $JB"
 
-HAS_LDID="$(dev 'command -v ldid >/dev/null 2>&1 && echo yes || echo no' | tr -d '\r')"
+HAS_LDID="$(dev_q 'command -v ldid >/dev/null 2>&1 && echo yes || echo no' | tr -d '\r')"
 if [ "$HAS_LDID" = "yes" ]; then
   note "ldid: present"
 else
   warn "ldid missing — the native addons cannot be re-signed and the terminal will not load"
 fi
 
-HAS_TAR="$(dev 'command -v tar >/dev/null 2>&1 && echo yes || echo no' | tr -d '\r')"
+HAS_TAR="$(dev_q 'command -v tar >/dev/null 2>&1 && echo yes || echo no' | tr -d '\r')"
 [ "$HAS_TAR" = "yes" ] || die "no tar on the phone"
 
 mutate "mkdir -p '$STAGE'" >/dev/null 2>&1 || true
@@ -317,7 +372,7 @@ mutate "mkdir -p '$STAGE'" >/dev/null 2>&1 || true
 # ---------------------------------------------------------------------------
 step "1/4  Node"
 
-NODE_OK="$(dev "[ -x '$INSTALL_DIR/node' ] && NODE_OPTIONS=--jitless '$INSTALL_DIR/node' --version 2>/dev/null || echo MISSING" | tr -d '\r')"
+NODE_OK="$(dev_q "[ -x '$INSTALL_DIR/node' ] && NODE_OPTIONS=--jitless '$INSTALL_DIR/node' --version 2>/dev/null || echo MISSING" | tr -d '\r')"
 
 if [ "$SKIP_NODE" = "1" ]; then
   note "skipped (--skip-node)"
@@ -350,7 +405,7 @@ else
   push "$WORK/$NODE_BIN" "/var/mobile/Documents" "$NODE_BIN"
   mutate "mkdir -p '$INSTALL_DIR' && cp '/rootfs/var/mobile/Documents/$NODE_BIN' '$INSTALL_DIR/node' && chmod 755 '$INSTALL_DIR/node'"
 
-  VER="$(dev "NODE_OPTIONS=--jitless '$INSTALL_DIR/node' --version" | tr -d '\r')"
+  VER="$(dev_q "NODE_OPTIONS=--jitless '$INSTALL_DIR/node' --version" | tr -d '\r')"
   case "$VER" in
     v2[2-9].*|v[3-9][0-9].*) note "installed: $VER" ;;
     *) die "Node installed but reports '$VER'; expected v22.x or newer" ;;
@@ -362,10 +417,10 @@ fi
 # ---------------------------------------------------------------------------
 step "2/4  DSH tree"
 
-TREE_OK="$(dev "[ -f '$INSTALL_DIR/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js' ] && echo yes || echo no" | tr -d '\r')"
+TREE_OK="$(dev_q "[ -f '$INSTALL_DIR/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js' ] && echo yes || echo no" | tr -d '\r')"
 # Also accept a tree that install.sh would find on its own.
 if [ "$TREE_OK" = "no" ]; then
-  TREE_OK="$(dev "[ -f '/var/mobile/Documents/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js' ] && echo here || echo no" | tr -d '\r')"
+  TREE_OK="$(dev_q "[ -f '/var/mobile/Documents/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js' ] && echo here || echo no" | tr -d '\r')"
 fi
 
 if [ "$SKIP_DSH" = "1" ]; then
@@ -401,7 +456,7 @@ else
   # alone. Verified on the target: `tar -xzf` fails with "gzip: cannot exec".
   mutate "mkdir -p '$INSTALL_DIR/dsh' && cd '$INSTALL_DIR/dsh' && tar -xf '/rootfs/var/mobile/Documents/dsh-tree.tar' && rm -f '/rootfs/var/mobile/Documents/dsh-tree.tar'"
 
-  CHECK="$(dev "[ -f '$INSTALL_DIR/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js' ] && echo ok || echo missing" | tr -d '\r')"
+  CHECK="$(dev_q "[ -f '$INSTALL_DIR/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js' ] && echo ok || echo missing" | tr -d '\r')"
   [ "$CHECK" = "ok" ] || die "the DSH tree did not land where expected under $INSTALL_DIR/dsh"
   note "tree in place"
 fi
