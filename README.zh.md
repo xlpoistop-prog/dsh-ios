@@ -15,27 +15,39 @@ cd dsh-ios
 ./bootstrap.sh --device mobile@127.0.0.1 --password <密码>            # 2. 真装
 ```
 
-**这几个参数是什么意思。** 脚本跑在**你的电脑上**，不在手机上 —— 它是通过 SSH 去操作手机：
+**这几个参数是什么意思。** 脚本跑在**你的电脑上**，不在手机上 —— 它是通过 SSH 去操作**手机**：
 
 | 参数 | 含义 |
 |---|---|
 | `git clone` / `cd` | 把仓库拉到本机并进入目录。 |
-| `--device mobile@127.0.0.1` | 手机的 SSH 地址。`mobile` 是设备上的用户名。`127.0.0.1` 只在**用 i4Tools 的 USB 转发通道时**是对的；走 Wi-Fi 就换成手机 IP，比如 `--device mobile@192.168.1.23`。 |
-| `--password <密码>` | 手机 SSH 的密码 —— 你装 OpenSSH 时设的那个。 |
+| `--device 用户名@主机` | **怎么连到手机。** `mobile` 是**手机上的账号名**（iOS 固定有 `root` 和 `mobile` 两个，用 `mobile` —— `root` 登录通常是关着的）。`主机`填什么取决于你怎么连，见下表。 |
+| `--password <密码>` | **手机**上 SSH 的密码 —— 你在**手机**上装 OpenSSH 时设的那个。 |
 | `--dry-run` | **先跑这一条。** 它只打印打算做什么，**不改任何东西**。看着没问题，再跑下面那条（去掉 `--dry-run`）。 |
+
+**`--device` 里的主机填什么，取决于你的电脑怎么连到手机：**
+
+| 你的连接方式 | 填什么 |
+|---|---|
+| **i4Tools 的「打开 SSH 通道」** | `mobile@127.0.0.1` —— 它把手机的 22 端口通过 USB 转发到你本机的 22 端口。**前提是你本机 22 端口没被别的东西占着。** |
+| **Wi-Fi（同一局域网）** | `mobile@<手机IP>` —— IP 在 手机「设置 → 无线局域网」里看。这种写法**不需要 i4Tools**。 |
+| **`iproxy`**（libimobiledevice） | `mobile@127.0.0.1 --port <你转发到的端口>` |
+| **其他任何隧道** | `mobile@<主机> --port <端口>` |
+
+> **`127.0.0.1` 不是通用答案** —— 它只是 i4Tools 的默认值，因为那个工具恰好转发到本机 22 端口。
+> **本仓库不依赖 i4Tools**，用 Wi-Fi 直连或者别的转发工具都行。端口不是 22 就加 `--port`。
 
 **然后 `bootstrap.sh` 会自己把剩下的做完：**
 
-1. 检查设备 —— 越狱、`jbroot`、`ldid`、`tar`，以及 Node 和 DSH 树在不在
+1. 检查手机 —— 越狱、`jbroot`、`ldid`、`tar`，以及 Node 和 DSH 树在不在
 2. Node 缺 → 下载钉死的构建、**校验 sha256**、推过去
 3. DSH 树缺 → **在你电脑上** `npm install`（npm 和快网络都在这边）、打包、推过去
-4. 推仓库内容 → 在设备上跑 `install.sh` → 启动
+4. 推仓库内容 → 在手机上跑 `install.sh` → 启动
 5. 打印一个 `http://127.0.0.1:3080/?token=…`
 
-**最后**在**设备的 Safari** 里打开那个 URL，把权限模式设为**完全权限** ——
+**最后**在**手机的 Safari** 里打开那个 URL，把权限模式设为**完全权限** ——
 `workspace-write` 在 iOS 上没有可用的沙箱后端。
 
-**脚本要能跑通，设备上需要：** 越狱、[NewTerm](https://repo.chariz.com/)、
+**脚本要能跑通，手机上需要：** 越狱、[NewTerm](https://repo.chariz.com/)、
 Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
 **电脑上需要：** Windows 上 PuTTY（`plink`+`pscp`），其他系统 `ssh`+`scp`。
 下面的[安装](#安装)章节有完整步骤 —— 包括**为什么 i4Tools 在没装 OpenSSH 时也报「成功」**。
@@ -66,7 +78,7 @@ Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
 <td width="50%"><img src="docs/screenshots/settings.png" alt="DSH 设置面板，权限模式为完全权限"></td>
 </tr>
 <tr>
-<td align="center"><em>DSH 自己的 Web UI，跑在设备的 Safari 里。<br>会话列表、工作区选择、模型选择 —— 真的在跑，<br>不是效果图。</em></td>
+<td align="center"><em>DSH 自己的 Web UI，跑在手机的 Safari 里。<br>会话列表、工作区选择、模型选择 —— 真的在跑，<br>不是效果图。</em></td>
 <td align="center"><em>设置面板，权限模式设为「完全权限」。<br>这里是必须的：<code>workspace-write</code> 在 iOS 上<br>没有可用的沙箱后端，无法启动任务。</em></td>
 </tr>
 </table>
@@ -80,7 +92,7 @@ Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
 
 | | |
 |---|---|
-| 设备 | iPhone 15（A16） |
+| 手机 | iPhone 15（A16） |
 | iOS | **只有 17.1.1** |
 | 越狱 | Relaxin（rootHide） |
 | Node | 22.19.0（`iphoneos-arm64`） |
@@ -89,7 +101,7 @@ Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
 `--jitless` 的行为、没有 `gzip` —— 都是**平台性质**，不是某个 iOS 版本特有的，
 所以**思路**应该能迁移过去。**但那是推理，不是证据。**
 
-换 iOS 版本、换设备、换越狱工具，就要**重新验证细节**。
+换 iOS 版本、换手机、换越狱工具，就要**重新验证细节**。
 请把 [`docs/ios-constraints.md`](docs/ios-constraints.md) 当成
 **一份待核对清单**，而不是「保证成立」。
 
@@ -98,7 +110,7 @@ Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
 
 ### 实用提示
 
-**设备上需要终端。** 本项目是用 [NewTerm](https://repo.chariz.com/) 构建和使用的。
+**手机上需要终端。** 本项目是用 [NewTerm](https://repo.chariz.com/) 构建和使用的。
 其他 POSIX shell 应该也行；脚本只假设有 `sh`，不依赖别的。
 
 **从电脑连 SSH 不是必需的，但是最省时间的一件事。** 只用 NewTerm 也能跑通全部流程。
@@ -106,9 +118,9 @@ SSH 改变的是**调试速度**：用 `pscp`/`scp` 传文件而不是手敲、�
 一个字一个字转录、不用在 App 之间来回切。这个移植就是在 SSH 上调出来的，
 **差距不是一点半点**。
 
-**设备上必须装 SSH 服务端** —— 越狱源里的 **OpenSSH**。这一点绕不过去：
-任何客户端（包括 i4Tools 那个通道）最终连的都是**设备上的 `sshd`**。
-i4Tools 的方便之处在于它**走 USB（usbmuxd）转发本地端口**，所以不需要设备 IP 或 Wi-Fi ——
+**手机上必须装 SSH 服务端** —— 越狱源里的 **OpenSSH**。这一点绕不过去：
+任何客户端（包括 i4Tools 那个通道）最终连的都是**手机上的 `sshd`**。
+i4Tools 的方便之处在于它**走 USB（usbmuxd）转发本地端口**，所以不需要手机 IP 或 Wi-Fi ——
 但它是**转发器，不是服务端**。**卸掉 OpenSSH 之后它会报 `Connection refused`，
 而 i4Tools 界面上仍然显示「成功」** —— 因为那个弹窗只说明隧道建好了，不说明有人应答。
 
@@ -125,7 +137,7 @@ i4Tools 的方便之处在于它**走 USB（usbmuxd）转发本地端口**，所
 
 ### 桌面端一条命令
 
-如果设备已越狱、且 SSH 可达，这条命令全干完 —— 检查设备、拉 Node、
+如果手机已越狱、且 SSH 可达，这条命令全干完 —— 检查手机、拉 Node、
 **在本机构建 DSH 树**（npm 和网络在这边，不在手机上）、全部推过去、适配、启动：
 
 ```sh
@@ -140,12 +152,12 @@ cd dsh-ios
 
 #### 先把零件凑齐
 
-**设备上** —— 这些必须先有，本仓库装不了：
+**手机上** —— 这些必须先有，本仓库装不了：
 
 1. **越狱。** 测试环境见[致谢](#致谢)。
 2. **[NewTerm](https://repo.chariz.com/)** —— 你实际敲命令用的终端。
 3. **OpenSSH** —— Sileo 里的 `openssh-server`。**远程操作时这不是可选项**：
-   任何 SSH 客户端（**包括 i4Tools 那个通道**）最终连的都是**设备上的 `sshd`**。
+   任何 SSH 客户端（**包括 i4Tools 那个通道**）最终连的都是**手机上的 `sshd`**。
    卸掉它，通道会报 `Connection refused`，**而 i4Tools 的弹窗照样显示「成功」**。
 4. **`ldid`** 和 **`tar`** —— 绝大多数 bootstrap 都自带。`which ldid tar` 查一下。
 
@@ -165,15 +177,15 @@ cd dsh-ios
 PLINK=/path/to/plink PSCP=/path/to/pscp ./bootstrap.sh --device ...
 ```
 
-**怎么连到设备**，两条路：
+**怎么连到手机**，两条路：
 
-* **i4Tools 的「打开 SSH 通道」** —— 走 USB 转发本地端口，**不需要设备 IP 或 Wi-Fi**。
+* **i4Tools 的「打开 SSH 通道」** —— 走 USB 转发本地端口，**不需要手机 IP 或 Wi-Fi**。
   它监听 `127.0.0.1:22`，正是脚本的默认值。**重装 OpenSSH 之后要重新点一次。**
-* **Wi-Fi** —— `--device mobile@<设备IP>`，IP 在 设置 → 无线局域网 里看。
+* **Wi-Fi** —— `--device mobile@<手机IP>`，IP 在 设置 → 无线局域网 里看。
 
 ### 已经装好 Node + DSH？只做适配
 
-前置：**已越狱**设备，且已有 **Node 22**、`ldid`、`tar`。
+前置：**已越狱**手机，且已有 **Node 22**、`ldid`、`tar`。
 
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
@@ -197,7 +209,7 @@ sh install.sh
 sh scripts/start.sh          # 打印一个 Safari URL
 ```
 
-`scripts/start.sh` 处理了这台设备上**最容易出错的部分** ——
+`scripts/start.sh` 处理了这台手机上**最容易出错的部分** ——
 为什么这么写，见 [`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md)。
 停止用 `scripts/stop.sh`。
 
@@ -282,7 +294,7 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 
 | 坑 | 实际发生了什么 |
 |---|---|
-| 🟠 **`pkill -f` 静默无效** | 它**返回成功但什么都没杀**。旧实例继续占着端口，下一次启动**看起来成功了**，实际死于 `EADDRINUSE`。<br>用 pidfile；`killall node` 作为**故意的无差别兜底**；判断端口是否空闲**只能自己 bind 试试** —— 这台设备上**没有 `lsof`、`ss`、`netstat`，连 `ps` 都没有**。 |
+| 🟠 **`pkill -f` 静默无效** | 它**返回成功但什么都没杀**。旧实例继续占着端口，下一次启动**看起来成功了**，实际死于 `EADDRINUSE`。<br>用 pidfile；`killall node` 作为**故意的无差别兜底**；判断端口是否空闲**只能自己 bind 试试** —— 这台手机上**没有 `lsof`、`ss`、`netstat`，连 `ps` 都没有**。 |
 | **`su` 是 BSD 版** | 不支持 `-c`。root 的 SSH 登录默认被拒。 |
 
 ### DSH 自身容易被误读的行为
@@ -300,7 +312,7 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 | 坑 | 实际发生了什么 |
 |---|---|
 | **没有 JIT，因而也没有 WebAssembly** | undici（Node 的 `fetch`）在**导入时**就用 WebAssembly 编译它的 HTTP 解析器 —— 所以 **`fetch` 根本加载不起来**。 |
-| **给 `globalThis.fetch` 赋值会触发 undici 加载** | 这个全局量是**懒加载 getter**，赋值前的「读」才是触发导入和崩溃的那一步。<br>要用 `Object.defineProperty` **定义**它，而不是赋值。实测设备上**两个 preload 按顺序都要**。 |
+| **给 `globalThis.fetch` 赋值会触发 undici 加载** | 这个全局量是**懒加载 getter**，赋值前的「读」才是触发导入和崩溃的那一步。<br>要用 `Object.defineProperty` **定义**它，而不是赋值。实测手机上**两个 preload 按顺序都要**。 |
 | **ripgrep 既无法 spawn，包也不存在** | `ripgrep-ios-arm64` **从未发布**；`darwin-arm64` 构建链接了 iOS 没有的 `libiconv.2.dylib`。<br>改用**纯 JS 实现 + 进程内调用**。 |
 | **`sharp` 在 iOS 上没有可行路径** | 没有 iOS 版 libvips。<br>改用**纯 JS 编解码器** —— 而这恰好是另一个交叉编译移植**明确列为不可用**的能力。 |
 | 🔴 **自测通过，产物却是坏的** | 我们**自己的解码器忽略了** JPEG 的 `SOF0` 段长字段，所以它把我们编码器的 bug 高高兴兴读了回来，**所有自测全绿** —— 而 API 拒绝每一个文件。<br>**要拿产物去对规格，而不是对你的自家读取器。**<br>[`fixtures/verify-image-codec.mjs`](fixtures/verify-image-codec.mjs) 就是干这个的。 |
@@ -364,7 +376,7 @@ module.exports = require('./ios/sharp.cjs');
 `rg-ios/` 是用纯 JS 实现该插件**实际使用的两种调用形态** ——
 glob 用 `--files`，grep 用 `--json`（ripgrep 公开的 JSON schema）——
 所以**原有解析器一行都不用改**。它是**进程内调用**的，不是 spawn：
-在这台设备上 spawn 脚本不可靠，因为内核解析 shebang 时用的是
+在这台手机上 spawn 脚本不可靠，因为内核解析 shebang 时用的是
 **与创建它的进程不同的文件系统视图**（见命名空间文档）。
 
 ### `node-pty`：一个字节
@@ -419,7 +431,7 @@ docs/                       三份长文设计笔记
 站在这些之上：
 
 * **越狱本身。** 这个项目完全是它的下游产物。这个移植之所以可能存在，
-  只是因为你可以在自己的设备上运行一个不受沙箱限制的二进制 ——
+  只是因为你可以在自己的手机上运行一个不受沙箱限制的二进制 ——
   而那是很多人花时间做出来的：
   * **[Relaxin](https://github.com/owngoal-dev/Relaxin)**（MIT）—— 本项目构建和
     验证所基于的越狱（iOS 17.1.1）。仓库里放的是参考实现源码。
@@ -450,7 +462,7 @@ docs/                       三份长文设计笔记
   `docs/ios-constraints.md` 里若干条笔记正是因为读过它才存在。本移植在「如何构建 Node」
   上选了相反的路线，但对「iOS 禁止了什么」的诊断有大量重合，**这一点归功于那项工作**。
 * [`everettjf/dsh-ios`](https://github.com/everettjf/dsh-ios) —— 另一个同样合理、
-  思路完全不同的方案：在设备上用 iSH 模拟 Linux 来跑 DSH。
+  思路完全不同的方案：在手机上用 iSH 模拟 Linux 来跑 DSH。
   **GPL-3.0；本项目未使用其任何代码。**
 
 ## 许可
