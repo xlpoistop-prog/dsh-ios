@@ -7,6 +7,13 @@
 
 ## 快速开始
 
+> **⚠️ 跑下面的命令之前，先确认两件事：**
+>
+> 1. **手机已越狱**
+> 2. 手机上**装了 OpenSSH**（Sileo 里装 `openssh-server`），而且**你现在就能从这台电脑 SSH 连上它**
+>
+> **缺任何一样，下面这条命令都会直接失败。** 完整前置条件见[安装](#安装)。
+
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios

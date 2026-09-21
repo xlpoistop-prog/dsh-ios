@@ -254,9 +254,31 @@ STAGE="/var/mobile/Documents/.dsh-ios-stage"
 # ---------------------------------------------------------------------------
 step "device"
 
-dev "uname -s" >/dev/null 2>&1 || die "cannot reach $DEVICE — check the address, password/key, and that sshd is running on the device.
-   Note: i4Tools' SSH channel forwards to the device's own sshd, so OpenSSH
-   must be installed on the device. Its dialog reports success either way."
+dev "uname -s" >/dev/null 2>&1 || die "cannot reach $DEVICE.
+
+   This script requires an SSH connection to the phone that already works. The
+   usual causes, most common first:
+
+     1. OpenSSH is not installed on the phone.
+        Install openssh-server from Sileo. Every SSH client -- including
+        i4Tools' 'open SSH channel' -- ends up talking to sshd *on the phone*;
+        i4Tools only forwards the port. Its dialog reports success either way,
+        so it is not evidence that anything is listening.
+
+     2. The channel was opened before OpenSSH was installed.
+        Re-open it now that sshd exists.
+
+     3. Wrong address or password.
+        --device is USER@HOST. Over i4Tools' USB channel that is
+        mobile@127.0.0.1; over Wi-Fi it is the phone's IP. The password is the
+        one the jailbreak asked you to set for the mobile account.
+
+     4. The phone is not jailbroken, or the jailbreak is not active.
+
+   Test it on its own first:
+
+     plink -ssh -pw <pw> mobile@127.0.0.1 \"echo ok\"
+     ssh -o StrictHostKeyChecking=accept-new mobile@127.0.0.1 \"echo ok\""
 
 OS_NAME="$(dev 'uname -s' 2>/dev/null | tr -d '\r')"
 [ "$OS_NAME" = "Darwin" ] || die "device reports uname -s = '$OS_NAME'; expected Darwin (iOS)"

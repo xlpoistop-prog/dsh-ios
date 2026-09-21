@@ -7,6 +7,15 @@ on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 
 ## Quick start
 
+> **⚠️ Before running the command below, check two things:**
+>
+> 1. the phone is **jailbroken**, and
+> 2. **OpenSSH is installed on it** (`openssh-server` from Sileo) and you can
+>    **already reach it over SSH from this computer**.
+>
+> **Without both, the command below fails immediately.** Full prerequisites are
+> in [Install](#install).
+
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
