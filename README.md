@@ -22,7 +22,7 @@ phone — it drives the **phone** over SSH:
 |---|---|
 | `git clone` / `cd` | Fetch this repo and enter it. |
 | `--device USER@HOST` | **How to reach the phone.** `mobile` is the account name **on the phone** (iOS always has `root` and `mobile`; use `mobile`, since root login is normally disabled). What goes in `HOST` depends on how you connect — see below. |
-| `--password <pw>` | The **phone's** SSH password — the one you set when installing OpenSSH **on the phone**. |
+| `--password <pw>` | The password for the `mobile` account **on the phone** — **the one the jailbreak asked you to set when it succeeded**. If you were never asked, OpenSSH's default is `alpine`. |
 | `--dry-run` | **Run this one first.** It prints what it intends to do and changes nothing. If it looks right, run the second line without it. |
 
 **What to put in `HOST` depends on how your computer reaches the phone:**
@@ -150,20 +150,15 @@ also why a stale bookmark can look like "the server is down".
 
 ## Install
 
-Two entry points, depending on where you are starting from.
+Two entry points. **The commands are in [Quick start](#quick-start) above** —
+this section is what has to be true before they will work, and what each script
+actually does.
 
 ### One command, from a desktop
 
-If you have a jailbroken device reachable over SSH, this does everything —
-checks the device, fetches Node, builds the DSH tree here (npm and the network
-are on this side, not there), copies it all over, adapts it, and starts it:
-
-```sh
-git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
-cd dsh-ios
-./bootstrap.sh --device mobile@127.0.0.1 --password <pw> --dry-run   # see the plan
-./bootstrap.sh --device mobile@127.0.0.1 --password <pw>
-```
+`bootstrap.sh` checks the phone, fetches Node, builds the DSH tree here (npm and
+the network are on this side, not there), copies it all over, adapts it, and
+starts it.
 
 It is idempotent: anything already present is left alone. Run `--help` for the
 rest (`--key`, `--hostkey`, `--install-dir`, `--skip-node`, `--skip-dsh`, …).

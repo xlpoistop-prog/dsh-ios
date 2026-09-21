@@ -59,7 +59,9 @@ usage() {
 Options:
   --device USER@HOST      SSH target                (default mobile@127.0.0.1)
   --port N                SSH port
-  --password PASS         SSH password              (otherwise keys are used)
+  --password PASS         Password for the phone's mobile account
+                          (the one the jailbreak asked you to set);
+                          otherwise SSH keys are used
   --key FILE              SSH private key
   --hostkey FINGERPRINT   Expected host key, e.g. SHA256:abc...
   --install-dir DIR       Device install location   (default /var/mobile/Documents/dsh-ios)

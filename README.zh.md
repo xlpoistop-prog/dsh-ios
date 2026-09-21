@@ -21,7 +21,7 @@ cd dsh-ios
 |---|---|
 | `git clone` / `cd` | 把仓库拉到本机并进入目录。 |
 | `--device 用户名@主机` | **怎么连到手机。** `mobile` 是**手机上的账号名**（iOS 固定有 `root` 和 `mobile` 两个，用 `mobile` —— `root` 登录通常是关着的）。`主机`填什么取决于你怎么连，见下表。 |
-| `--password <密码>` | **手机**上 SSH 的密码 —— 你在**手机**上装 OpenSSH 时设的那个。 |
+| `--password <密码>` | **手机**上 `mobile` 账号的密码 —— **越狱成功时让你设置的那个**。如果当时没设，OpenSSH 的默认密码是 `alpine`。 |
 | `--dry-run` | **先跑这一条。** 它只打印打算做什么，**不改任何东西**。看着没问题，再跑下面那条（去掉 `--dry-run`）。 |
 
 **`--device` 里的主机填什么，取决于你的电脑怎么连到手机：**
@@ -133,19 +133,13 @@ i4Tools 的方便之处在于它**走 USB（usbmuxd）转发本地端口**，所
 
 ## 安装
 
-两个入口，看你从哪开始。
+两个入口。**命令就在上面的[快速开始](#快速开始)里** ——
+这一节讲的是「跑那条命令之前需要具备什么」，以及每个脚本到底做了什么。
 
 ### 桌面端一条命令
 
-如果手机已越狱、且 SSH 可达，这条命令全干完 —— 检查手机、拉 Node、
-**在本机构建 DSH 树**（npm 和网络在这边，不在手机上）、全部推过去、适配、启动：
-
-```sh
-git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
-cd dsh-ios
-./bootstrap.sh --device mobile@127.0.0.1 --password <密码> --dry-run   # 先看计划
-./bootstrap.sh --device mobile@127.0.0.1 --password <密码>
-```
+`bootstrap.sh` 会检查手机、拉 Node、**在本机构建 DSH 树**（npm 和网络在这边，不在手机上）、
+全部推过去、适配、启动。
 
 **幂等**：已经有的东西不动。其余参数看 `--help`
 （`--key`、`--hostkey`、`--install-dir`、`--skip-node`、`--skip-dsh` …）。
