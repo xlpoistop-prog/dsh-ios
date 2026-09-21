@@ -7,8 +7,19 @@ on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 
 ## Quick start
 
-**Fastest route: put the phone and the computer on the same Wi-Fi, then run
-these three lines.**
+**⚠️ First, confirm one thing: can you already reach the phone over SSH from
+this computer?**
+
+* **Yes** — carry on. The command below finds the phone and prompts for the
+  password; in the common case it is just these three lines.
+* **No** — **read [Install](#install) first.** The phone needs a jailbreak and
+  **OpenSSH** (`openssh-server` from Sileo); Windows needs **PuTTY**, other
+  systems the built-in `ssh`. **The script cannot install any of that** — every
+  SSH route to the phone ends at `sshd` running *on the phone*. Come back once
+  it works.
+
+**Once that is true, the fastest route: put the phone and the computer on the
+same Wi-Fi, then run these three lines.**
 
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
@@ -23,14 +34,8 @@ servers (by reading their banners, not by testing whether the port is open) —
 **and then asks for the password**, the one the jailbreak asked you to set
 (`alpine` if you never set one).
 
-**So in the common case it is those three lines and one password.**
-
 > If you would rather look before leaping, add `--dry-run` to the last line. It
 > prints what it intends to do and **changes nothing**.
-
-**Prerequisites the script cannot install for you:** a jailbroken phone with
-**OpenSSH** (`openssh-server` from Sileo), and **PuTTY** on Windows or the
-built-in `ssh` elsewhere. See [Install](#install).
 
 ### Specifying the connection yourself
 
