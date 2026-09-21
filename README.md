@@ -5,6 +5,33 @@
 Run [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`)
 on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 
+## Quick start
+
+```sh
+git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
+cd dsh-ios
+
+# see what it would do, change nothing
+./bootstrap.sh --device mobile@127.0.0.1 --password <pw> --dry-run
+
+# do it
+./bootstrap.sh --device mobile@127.0.0.1 --password <pw>
+```
+
+Then open the printed `http://127.0.0.1:3080/?token=…` in **Safari on the
+device**, and set the permission mode to **full access** — `workspace-write`
+has no sandbox backend able to start on iOS.
+
+**Before that command can work you need, on the device:** a jailbreak,
+[NewTerm](https://repo.chariz.com/), **`openssh-server`** from Sileo, and
+`ldid` + `tar`. **On the computer:** PuTTY (`plink`+`pscp`) on Windows, or
+`ssh`+`scp` elsewhere. The [Install](#install) section below walks through all
+of it — including why i4Tools reports success even when OpenSSH is missing.
+
+**Only tested on iPhone 15 / iOS 17.1.1 / Relaxin (rootHide).** See
+[tested scope](#read-this-before-assuming-it-will-work-for-you) before assuming
+it transfers to your setup.
+
 ```
 ┌─────────────────────────────────────────────┐
 │  Safari → http://127.0.0.1:3080             │
@@ -87,109 +114,6 @@ that dialog only reports that the tunnel was created, not that anything answered
 `127.0.0.1:3080` works from then on. Worth knowing, because the token changes on
 every launch and is long enough to be genuinely annoying to retype — and it is
 also why a stale bookmark can look like "the server is down".
-
----
-
-## Why this port is different
-
-There is at least one other iOS port of DSH, and it is a serious piece of work:
-it cross-compiles Node with a patched V8 so that **full JIT works**, compiles
-`node-pty` natively, and ships proper `.deb` packages. If you have a Mac and a
-CI pipeline, **use that one** — it is faster and more complete.
-
-This port makes the opposite trade. It takes a **stock** iOS Node build and
-adapts at runtime, so the entire port is a set of JavaScript shims, one
-byte-level binary patch, and three small edits to DSH itself. **Anyone can
-reproduce it with a jailbroken phone and an SSH connection** — no build
-toolchain of any kind.
-
-That constraint is the whole design:
-
-| | This port | Cross-compiled port |
-|---|---|---|
-| Build toolchain | **none** | macOS + Xcode (+ CI) |
-| JIT | no (`--jitless`) | **yes** |
-| Node | stock `iphoneos-arm64` build | custom build, V8 W^X patch |
-| `node-pty` | macOS prebuild, one byte rewritten | compiled for iOS |
-| ICU / Unicode regex | depends on the build | small-icu, `\p{...}` works |
-| Images (`sharp`) | **pure-JS codec (works)** | shim (stated unavailable) |
-| Delivery | scripts | `.deb` packages |
-
-The two are complementary, not competing. Notes for anyone wanting to combine
-them are in [`docs/ios-constraints.md`](docs/ios-constraints.md).
-
----
-
-## Pitfalls this port exists to document
-
-These cost the most time and are the least written down elsewhere. Each one is
-expanded — with the commands to observe it and the wrong turns taken — in
-[`docs/ios-constraints.md`](docs/ios-constraints.md) and
-[`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md). **Read this table
-before debugging anything on this platform.**
-
-### Filesystem
-
-| Pitfall | What actually happens |
-|---|---|
-| **`/var/mobile` means two different things** | A jailbreak shell resolves it *inside* jbroot; Node — a stock binary with no rootHide interposition — resolves it to the **real** root. Both are correct; they disagree. Absolute `/var/mobile/...` paths handed to Node therefore resolve to a directory that does not contain your files. **`cd` first and pass relative paths.** This one alone caused failures in `--import`, module resolution, config paths and UI behaviour, and was misdiagnosed as a sandbox problem for days. |
-| **Native `.node` modules must live inside jbroot** | The same file, same signature, loads from jbroot and fails from the real `/var/mobile/Documents` with `file system sandbox blocked mmap()`. Adding `no-sandbox` to the entitlements does **not** help — the restriction is on the process, not the request. This is why the install cannot be placed somewhere that survives an un-jailbreak. |
-| **A symlinked addon directory does not work** | `prebuilds/ios-arm64 → darwin-arm64` is followed by the loader, which then refuses the macOS file anyway. It has to be a real copy. |
-| **`ENOENT` from `spawn` does not mean spawning is blocked** | It means **the path does not exist in this process's view**. The real `/bin` contains `df` and `ps`, nothing else — every jailbreak binary is under jbroot. `child_process` works fine once `PATH` points at real paths. This errno was misread as a sandbox denial and led to an entire wrong architecture for a while. |
-| **`exec`ing a *script* is unreliable** | Spawning a binary works. Spawning a script whose `#!/…` interpreter the kernel must resolve did not — not as a shell path, not as Node's realpath, not via `#!/usr/bin/env node` with `node` on `PATH`. The kernel's view and the process's view cannot both be satisfied. **If the answer involves exec'ing a script, look for an in-process answer.** |
-| **No `gzip`** | `tar` is present, `gzip` is not. `tar -xzf` fails with `gzip: cannot exec`. Decompress with Node's `zlib`. |
-
-### Process management
-
-| Pitfall | What actually happens |
-|---|---|
-| **`pkill -f` silently does nothing** | It returns success and kills nothing. A stale server keeps the port and the next launch dies with `EADDRINUSE`, having *appeared* to start. Use a pidfile; use `killall node` as a deliberately indiscriminate last resort; test a port by trying to bind it, since there is no `lsof`, `ss`, `netstat` or even `ps`. |
-| **`su` is the BSD one** | No `-c`. Root SSH login was refused by default. |
-
-### DSH behaviour that is easy to misread
-
-| Pitfall | What actually happens |
-|---|---|
-| **Disabling `shell-env` breaks session creation** | The `standard` agent preset declares a `tool-bash` row that injects `shellEnv`. With `shell-env` off the preset cannot mount, so session creation fails — and the workspace picker just quietly reverts, with **nothing in the server log**. Profile boot does not catch it because presets mount lazily. |
-| **Disabling a row can silently remove a service** | The boot audit *skips* disabled entries, so `subprocess` vanished without complaint and later dependents hung. |
-| **Errors are swallowed** | The picker's handler threw and something caught the rejection: no log line, no on-screen message. [`tools/diag-overlay.js`](tools/diag-overlay.js) exists because of this — it found the real cause in one page load after several rounds of guessing. **Build the instrument before forming the hypothesis.** |
-| **The request-image cache ignores the pixel budget** | Raising the budget has no effect on an image already sent once; the old, smaller encoding is reused. Clear `dsh-home/attachments/v1/request-images/`. Very easy to read as "the change didn't work". |
-| **The cache version marker does not cover everything** | It was bumped for the WebP→PNG fix and still does not cover the budget change. Do not assume a config change invalidates anything. |
-
-### Runtime
-
-| Pitfall | What actually happens |
-|---|---|
-| **No JIT, and therefore no WebAssembly** | Undici — Node's `fetch` — compiles its HTTP parser from WebAssembly *at import*, so `fetch` cannot be loaded at all. |
-| **Assigning `globalThis.fetch` loads undici** | The global is a lazy getter; the read-before-write is what triggers the import and the crash. Define the property instead. On the device tested, both preloads in order were needed. |
-| **Ripgrep cannot be spawned, and its package does not exist** | `ripgrep-ios-arm64` is never published, and the `darwin-arm64` build links `libiconv.2.dylib`. Replaced with a pure-JS implementation called **in-process**. |
-| **`sharp` has no path to working on iOS** | No iOS libvips. Replaced with a pure-JS codec — and this is the one capability a cross-compiled port reports as unavailable. |
-| **A self-test can pass while the output is malformed** | Our own decoder ignored the JPEG `SOF0` segment length, so it read back the encoder's own bug without complaint while the API rejected every file. **Check produced bytes against the spec, not against your own reader.** [`fixtures/verify-image-codec.mjs`](fixtures/verify-image-codec.mjs) does this. |
-
----
-
-## What works
-
-| Capability | Status |
-|---|---|
-| Web UI in Safari (workspaces, sessions, multi-turn, trajectory view) | ✅ |
-| Live DeepSeek API, streaming SSE | ✅ |
-| `bash` — real command execution | ✅ |
-| `read` / `write` / `edit` | ✅ |
-| `glob` / `grep` | ✅ pure-JS ripgrep, called in-process |
-| **Image attachments — upload and read** | ✅ **pure-JS `sharp` backend** |
-| Session persistence (`jsonl.zstd`) | ✅ |
-| Subagents, workflows, goals, todos, web search | ✅ |
-
-## What does not
-
-| Limitation | Why |
-|---|---|
-| No JIT | `--jitless`; expect an order of magnitude more CPU per unit of work |
-| No WebAssembly | stubbed out; libraries built on wasm will not run |
-| Sandboxing / FFI subprocess | `koffi` has no iOS build; stubbed |
-| `worker_threads` | unavailable under the flags this build needs |
-| Native npm addons | need an iOS build; the two DSH requires are handled specially |
 
 ---
 
@@ -288,6 +212,109 @@ does. `scripts/stop.sh` stops it.
 sh scripts/start.sh 3081        # different port
 DSH_SAFE=1 sh scripts/start.sh  # do not kill unrelated node processes
 ```
+
+---
+
+## Why this port is different
+
+There is at least one other iOS port of DSH, and it is a serious piece of work:
+it cross-compiles Node with a patched V8 so that **full JIT works**, compiles
+`node-pty` natively, and ships proper `.deb` packages. If you have a Mac and a
+CI pipeline, **use that one** — it is faster and more complete.
+
+This port makes the opposite trade. It takes a **stock** iOS Node build and
+adapts at runtime, so the entire port is a set of JavaScript shims, one
+byte-level binary patch, and three small edits to DSH itself. **Anyone can
+reproduce it with a jailbroken phone and an SSH connection** — no build
+toolchain of any kind.
+
+That constraint is the whole design:
+
+| | This port | Cross-compiled port |
+|---|---|---|
+| Build toolchain | **none** | macOS + Xcode (+ CI) |
+| JIT | no (`--jitless`) | **yes** |
+| Node | stock `iphoneos-arm64` build | custom build, V8 W^X patch |
+| `node-pty` | macOS prebuild, one byte rewritten | compiled for iOS |
+| ICU / Unicode regex | depends on the build | small-icu, `\p{...}` works |
+| Images (`sharp`) | **pure-JS codec (works)** | shim (stated unavailable) |
+| Delivery | scripts | `.deb` packages |
+
+The two are complementary, not competing. Notes for anyone wanting to combine
+them are in [`docs/ios-constraints.md`](docs/ios-constraints.md).
+
+---
+
+## What works
+
+| Capability | Status |
+|---|---|
+| Web UI in Safari (workspaces, sessions, multi-turn, trajectory view) | ✅ |
+| Live DeepSeek API, streaming SSE | ✅ |
+| `bash` — real command execution | ✅ |
+| `read` / `write` / `edit` | ✅ |
+| `glob` / `grep` | ✅ pure-JS ripgrep, called in-process |
+| **Image attachments — upload and read** | ✅ **pure-JS `sharp` backend** |
+| Session persistence (`jsonl.zstd`) | ✅ |
+| Subagents, workflows, goals, todos, web search | ✅ |
+
+## What does not
+
+| Limitation | Why |
+|---|---|
+| No JIT | `--jitless`; expect an order of magnitude more CPU per unit of work |
+| No WebAssembly | stubbed out; libraries built on wasm will not run |
+| Sandboxing / FFI subprocess | `koffi` has no iOS build; stubbed |
+| `worker_threads` | unavailable under the flags this build needs |
+| Native npm addons | need an iOS build; the two DSH requires are handled specially |
+
+---
+
+## Pitfalls this port exists to document
+
+These cost the most time and are the least written down elsewhere. Each one is
+expanded — with the commands to observe it and the wrong turns taken — in
+[`docs/ios-constraints.md`](docs/ios-constraints.md) and
+[`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md). **Read this table
+before debugging anything on this platform.**
+
+### Filesystem
+
+| Pitfall | What actually happens |
+|---|---|
+| **`/var/mobile` means two different things** | A jailbreak shell resolves it *inside* jbroot; Node — a stock binary with no rootHide interposition — resolves it to the **real** root. Both are correct; they disagree. Absolute `/var/mobile/...` paths handed to Node therefore resolve to a directory that does not contain your files. **`cd` first and pass relative paths.** This one alone caused failures in `--import`, module resolution, config paths and UI behaviour, and was misdiagnosed as a sandbox problem for days. |
+| **Native `.node` modules must live inside jbroot** | The same file, same signature, loads from jbroot and fails from the real `/var/mobile/Documents` with `file system sandbox blocked mmap()`. Adding `no-sandbox` to the entitlements does **not** help — the restriction is on the process, not the request. This is why the install cannot be placed somewhere that survives an un-jailbreak. |
+| **A symlinked addon directory does not work** | `prebuilds/ios-arm64 → darwin-arm64` is followed by the loader, which then refuses the macOS file anyway. It has to be a real copy. |
+| **`ENOENT` from `spawn` does not mean spawning is blocked** | It means **the path does not exist in this process's view**. The real `/bin` contains `df` and `ps`, nothing else — every jailbreak binary is under jbroot. `child_process` works fine once `PATH` points at real paths. This errno was misread as a sandbox denial and led to an entire wrong architecture for a while. |
+| **`exec`ing a *script* is unreliable** | Spawning a binary works. Spawning a script whose `#!/…` interpreter the kernel must resolve did not — not as a shell path, not as Node's realpath, not via `#!/usr/bin/env node` with `node` on `PATH`. The kernel's view and the process's view cannot both be satisfied. **If the answer involves exec'ing a script, look for an in-process answer.** |
+| **No `gzip`** | `tar` is present, `gzip` is not. `tar -xzf` fails with `gzip: cannot exec`. Decompress with Node's `zlib`. |
+
+### Process management
+
+| Pitfall | What actually happens |
+|---|---|
+| **`pkill -f` silently does nothing** | It returns success and kills nothing. A stale server keeps the port and the next launch dies with `EADDRINUSE`, having *appeared* to start. Use a pidfile; use `killall node` as a deliberately indiscriminate last resort; test a port by trying to bind it, since there is no `lsof`, `ss`, `netstat` or even `ps`. |
+| **`su` is the BSD one** | No `-c`. Root SSH login was refused by default. |
+
+### DSH behaviour that is easy to misread
+
+| Pitfall | What actually happens |
+|---|---|
+| **Disabling `shell-env` breaks session creation** | The `standard` agent preset declares a `tool-bash` row that injects `shellEnv`. With `shell-env` off the preset cannot mount, so session creation fails — and the workspace picker just quietly reverts, with **nothing in the server log**. Profile boot does not catch it because presets mount lazily. |
+| **Disabling a row can silently remove a service** | The boot audit *skips* disabled entries, so `subprocess` vanished without complaint and later dependents hung. |
+| **Errors are swallowed** | The picker's handler threw and something caught the rejection: no log line, no on-screen message. [`tools/diag-overlay.js`](tools/diag-overlay.js) exists because of this — it found the real cause in one page load after several rounds of guessing. **Build the instrument before forming the hypothesis.** |
+| **The request-image cache ignores the pixel budget** | Raising the budget has no effect on an image already sent once; the old, smaller encoding is reused. Clear `dsh-home/attachments/v1/request-images/`. Very easy to read as "the change didn't work". |
+| **The cache version marker does not cover everything** | It was bumped for the WebP→PNG fix and still does not cover the budget change. Do not assume a config change invalidates anything. |
+
+### Runtime
+
+| Pitfall | What actually happens |
+|---|---|
+| **No JIT, and therefore no WebAssembly** | Undici — Node's `fetch` — compiles its HTTP parser from WebAssembly *at import*, so `fetch` cannot be loaded at all. |
+| **Assigning `globalThis.fetch` loads undici** | The global is a lazy getter; the read-before-write is what triggers the import and the crash. Define the property instead. On the device tested, both preloads in order were needed. |
+| **Ripgrep cannot be spawned, and its package does not exist** | `ripgrep-ios-arm64` is never published, and the `darwin-arm64` build links `libiconv.2.dylib`. Replaced with a pure-JS implementation called **in-process**. |
+| **`sharp` has no path to working on iOS** | No iOS libvips. Replaced with a pure-JS codec — and this is the one capability a cross-compiled port reports as unavailable. |
+| **A self-test can pass while the output is malformed** | Our own decoder ignored the JPEG `SOF0` segment length, so it read back the encoder's own bug without complaint while the API rejected every file. **Check produced bytes against the spec, not against your own reader.** [`fixtures/verify-image-codec.mjs`](fixtures/verify-image-codec.mjs) does this. |
 
 ---
 
