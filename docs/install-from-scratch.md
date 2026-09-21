@@ -60,30 +60,55 @@ it is a **forwarder, not a server**, so OpenSSH still has to be installed.
 
 This is the one component that has to be a real iOS build. Two routes:
 
-### Route A — use someone else's build (what this port does)
+### Route A — use an existing build (what this port does)
 
-An `iphoneos-arm64` build of Node 22 is available from the projects listed in
-[Credits](../README.md#credits). Fetch the binary, verify it, push it:
+This port was developed against one specific build, and its provenance is pinned
+so it can be re-obtained rather than trusted:
+
+```
+https://github.com/j0shua-SYSON/node-ios/releases/download/v22.19.0/node-v22.19.0-iphoneos-arm64
+size    74,851,216 bytes
+sha256  1f0975217902badb1919b6d6f5dfd9e1083e765f090766dab6d50f562044fbcc
+```
+
+**Verify the checksum before using it.** If it does not match, stop — something
+changed upstream, or the download was tampered with:
 
 ```sh
 # on the desktop
-pscp -pw <pw> node-v22.19.0-iphoneos-arm64 \
-     mobile@127.0.0.1:/var/mobile/Documents/dsh-ios/node
+curl -LO https://github.com/j0shua-SYSON/node-ios/releases/download/v22.19.0/node-v22.19.0-iphoneos-arm64
+sha256sum node-v22.19.0-iphoneos-arm64
+# expect: 1f0975217902badb1919b6d6f5dfd9e1083e765f090766dab6d50f562044fbcc
+```
+
+Then stage it and push:
+
+```sh
+# on the desktop — stage where the real filesystem is visible, then move it from
+# the device shell (see the note on jbroot paths above)
+pscp -pw <pw> node-v22.19.0-iphoneos-arm64 mobile@127.0.0.1:/rootfs/var/mobile/Documents/
 ```
 
 ```sh
 # on the device
 cd /var/mobile/Documents/dsh-ios
+cp /rootfs/var/mobile/Documents/node-v22.19.0-iphoneos-arm64 node
 chmod 755 node
 NODE_OPTIONS=--jitless ./node --version     # expect v22.19.0
 NODE_OPTIONS=--jitless ./node -e "console.log(process.arch, process.platform)"
 # expect: arm64 ios
 ```
 
+That build is MIT-licensed, and its maintainer describes it as *"the first public
+Node >=20 build for iOS"*. Its own release notes recommend the same flag this
+port depends on — `Run with --jitless` — which is worth knowing: **`--jitless` is
+not a workaround invented here.** It is the intended usage of the only public
+Node build for this platform.
+
 Two things to know:
 
-* **`--jitless` is mandatory** with a stock build. Without it you get `SIGBUS`
-  on the first JS execution. There is nothing to configure; it simply is not a
+* **`--jitless` is mandatory** with this build. Without it you get `SIGBUS` on
+  the first JS execution. There is nothing to configure; it is not a
   JIT-capable build on this OS.
 * `process.platform` is **`ios`**, not `darwin`. Anything that derives a package
   name or a path from `process.platform` will look for a package that does not

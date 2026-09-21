@@ -375,6 +375,13 @@ Standing on:
   None of this is a small thing to have done, and none of it is paid for.
 * [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — MIT
 * [Cordis](https://github.com/cordiverse/cordis) — the plugin framework DSH is built on
+* **[`j0shua-SYSON/node-ios`](https://github.com/j0shua-SYSON/node-ios)** (MIT) —
+  without this there is no port. It describes itself as *"the first public
+  Node >=20 build for iOS"*, and it is the Node this was built and tested
+  against. Its own release notes recommend the same `--jitless` this port
+  depends on, which is worth knowing: that flag is not a workaround invented
+  here, it is the intended usage of the only public build for this platform.
+  Pinned by checksum in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 * The **cross-compiled iOS port** ([`ddddddedcds/deepseek-harness-ios`](https://github.com/ddddddedcds/deepseek-harness-ios),
   branch `ios-port`, and its companion [`Node.js-for-ios`](https://github.com/ddddddedcds/Node.js-for-ios)).
   Its `docs/ios-port.md` is the most useful single document on this problem, and
