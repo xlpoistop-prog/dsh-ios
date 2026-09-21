@@ -197,13 +197,38 @@ cd dsh-ios
 **幂等**：已经有的东西不动。其余参数看 `--help`
 （`--key`、`--hostkey`、`--install-dir`、`--skip-node`、`--skip-dsh` …）。
 
-Windows 上它用 PuTTY 的 `plink`/`pscp` —— 因为 Windows 自带的 OpenSSH
-**无法非交互地接受密码**，而 `sshpass` 又基本没有。脚本会在 `PATH`
-和常见安装位置里找；装在别处就用 `PLINK=` / `PSCP=` 指定。
+#### 先把零件凑齐
 
-**它装不了越狱、装不了终端、也装不了 SSH 服务端。** 这些必须先有，绕不过去 ——
-**通往设备的 SSH 通道，末端是设备上的 `sshd`。** 见
-[`docs/install-from-scratch.md`](docs/install-from-scratch.md)。
+**设备上** —— 这些必须先有，本仓库装不了：
+
+1. **越狱。** 测试环境见[致谢](#致谢)。
+2. **[NewTerm](https://repo.chariz.com/)** —— 你实际敲命令用的终端。
+3. **OpenSSH** —— Sileo 里的 `openssh-server`。**远程操作时这不是可选项**：
+   任何 SSH 客户端（**包括 i4Tools 那个通道**）最终连的都是**设备上的 `sshd`**。
+   卸掉它，通道会报 `Connection refused`，**而 i4Tools 的弹窗照样显示「成功」**。
+4. **`ldid`** 和 **`tar`** —— 绝大多数 bootstrap 都自带。`which ldid tar` 查一下。
+
+**电脑上** —— 只需要一个 SSH 客户端：
+
+| 平台 | 用什么 | 说明 |
+|---|---|---|
+| **Windows** | **PuTTY**（[下载](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html)，或在 *Alternative binary files* 里单独拿 `plink.exe` + `pscp.exe`） | **推荐**：`plink -pw` 可以直接接密码。Windows 自带的 OpenSSH **做不到非交互传密码**，而 `sshpass` 基本没有。 |
+| Linux / macOS | `ssh` + `scp`，要传密码再装 `sshpass` | 或者用密钥：`--key` |
+| WSL | 同 Linux | |
+
+脚本会在 `PATH`、常见安装位置、以及 `%TEMP%` / `%USERPROFILE%` / `~/Desktop`
+下的 `plink/` 目录里找 —— **解压版 PuTTY（而不是跑安装程序）通常就落在这些地方**。
+装在别处就：
+
+```sh
+PLINK=/path/to/plink PSCP=/path/to/pscp ./bootstrap.sh --device ...
+```
+
+**怎么连到设备**，两条路：
+
+* **i4Tools 的「打开 SSH 通道」** —— 走 USB 转发本地端口，**不需要设备 IP 或 Wi-Fi**。
+  它监听 `127.0.0.1:22`，正是脚本的默认值。**重装 OpenSSH 之后要重新点一次。**
+* **Wi-Fi** —— `--device mobile@<设备IP>`，IP 在 设置 → 无线局域网 里看。
 
 ### 已经装好 Node + DSH？只做适配
 

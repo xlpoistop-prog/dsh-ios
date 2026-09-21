@@ -213,15 +213,43 @@ cd dsh-ios
 It is idempotent: anything already present is left alone. Run `--help` for the
 rest (`--key`, `--hostkey`, `--install-dir`, `--skip-node`, `--skip-dsh`, …).
 
-On Windows it uses PuTTY's `plink`/`pscp`, because Windows OpenSSH cannot take a
-password non-interactively and `sshpass` is rarely present. It looks for them
-on `PATH` and in the usual install locations; point at them with `PLINK=`/`PSCP=`
-if they live somewhere else.
+#### Getting the pieces in place
 
-**It cannot install the jailbreak, a terminal, or an SSH server.** Those come
-first, and there is no way around them — an SSH channel to the device needs
-`sshd` *on the device*. See
-[`docs/install-from-scratch.md`](docs/install-from-scratch.md).
+**On the device** — these come first, and nothing here can install them for you:
+
+1. **A jailbreak.** See [Credits](#credits) for the projects this was tested against.
+2. **[NewTerm](https://repo.chariz.com/)** — the terminal you will actually run things from.
+3. **OpenSSH** — `openssh-server` from Sileo. **Not optional for remote work**:
+   every SSH client, including i4Tools' channel, ends up talking to `sshd` *on
+   the device*. Removing it makes the channel fail with `Connection refused`
+   while the i4Tools dialog still reports success.
+4. **`ldid`** and **`tar`** — almost every bootstrap ships both. Check with
+   `which ldid tar`.
+
+**On your computer** — one SSH client:
+
+| Platform | Use | Notes |
+|---|---|---|
+| **Windows** | **PuTTY** ([download](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html), or just `plink.exe` + `pscp.exe` from *Alternative binary files*) | Preferred: `plink -pw` takes a password directly. Windows' built-in OpenSSH cannot do this non-interactively, and `sshpass` is rarely present. |
+| Linux / macOS | `ssh` + `scp`, plus `sshpass` if you want to pass a password | Or use an SSH key with `--key`. |
+| WSL | as Linux | |
+
+The script finds `plink`/`pscp` on `PATH`, in the usual install locations, and in
+a `plink/` folder under `%TEMP%`, `%USERPROFILE%`, or `~/Desktop` — which is
+where they end up if you extract the PuTTY zip rather than running the
+installer. If they are somewhere else:
+
+```sh
+PLINK=/path/to/plink PSCP=/path/to/pscp ./bootstrap.sh --device ...
+```
+
+**Reaching the device.** Two options:
+
+* **i4Tools' "open SSH channel"** — forwards a local port over USB, so no device
+  IP or Wi-Fi is needed. It listens on `127.0.0.1:22`, which is the default this
+  script assumes. Re-open it after reinstalling OpenSSH.
+* **Wi-Fi** — `--device mobile@<device-ip>` using the address shown in
+  Settings → Wi-Fi.
 
 ### Already have Node + DSH? Just adapt
 
