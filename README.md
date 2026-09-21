@@ -1,5 +1,7 @@
 # dsh-ios
 
+**English** | [中文](README.zh.md)
+
 Run [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`)
 on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 

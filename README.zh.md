@@ -1,5 +1,7 @@
 # dsh-ios
 
+[English](README.md) | **中文**
+
 在**越狱 iPhone** 上跑 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）——
 **不需要 Mac、不需要 Xcode、不需要交叉编译。**
 
