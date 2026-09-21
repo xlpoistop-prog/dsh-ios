@@ -22,6 +22,20 @@
 
 实测环境：**iPhone 15（A16）、iOS 17.1.1、Relaxin（rootHide）**，**Node 22.19.0**。
 
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/dsh-web-ui.png" alt="在 iOS Safari 里运行的 DSH Web UI"></td>
+<td width="50%"><img src="docs/screenshots/settings.png" alt="DSH 设置面板，权限模式为完全权限"></td>
+</tr>
+<tr>
+<td align="center"><em>DSH 自己的 Web UI，跑在设备的 Safari 里。<br>会话列表、工作区选择、模型选择 —— 真的在跑，<br>不是效果图。</em></td>
+<td align="center"><em>设置面板，权限模式设为「完全权限」。<br>这里是必须的：<code>workspace-write</code> 在 iOS 上<br>没有可用的沙箱后端，无法启动任务。</em></td>
+</tr>
+</table>
+
+服务只监听 `127.0.0.1:3080`，不对外暴露。桌面版 DSH 会自动开浏览器；
+这里传 `--no-open`，改为打印 URL，且每次启动 token 都会变。
+
 ---
 
 # ⚠️ 我们踩过的坑

@@ -23,6 +23,21 @@ on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 Verified on **iPhone 15 (A16), iOS 17.1.1, Relaxin (rootHide)** with
 **Node 22.19.0**.
 
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/dsh-web-ui.png" alt="The DSH web UI running in Safari on iOS"></td>
+<td width="50%"><img src="docs/screenshots/settings.png" alt="DSH settings showing the permission mode set to full access"></td>
+</tr>
+<tr>
+<td align="center"><em>DSH's own web UI, in Safari on the device. Session<br>list, workspace picker, model selector — the real<br>thing, not a mock-up.</em></td>
+<td align="center"><em>Settings, with the permission mode on full<br>access. That is required here: <code>workspace-write</code><br>has no sandbox backend able to start.</em></td>
+</tr>
+</table>
+
+Served from `127.0.0.1:3080`, loopback only. On desktop DSH opens a browser for
+you; here `--no-open` is passed and the URL printed, with a fresh token each
+launch.
+
 ---
 
 ## Why this port is different
