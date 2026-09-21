@@ -46,13 +46,29 @@ cd dsh-ios
 
 **No IP to look up, no arguments to work out.** The script finds the phone
 itself — first checking whether anything is listening on `127.0.0.1` (a
-USB-forwarded channel), otherwise scanning this computer's own subnet for SSH
-servers (by reading their banners, not by testing whether the port is open) —
+USB-forwarded channel), otherwise scanning this computer's own local networks for
+SSH servers (by reading their banners, not by testing whether the port is open) —
 **and then asks for the password**, the one the jailbreak asked you to set
 (`alpine` if you never set one).
 
 > If you would rather look before leaping, add `--dry-run` to the last line. It
 > prints what it intends to do and **changes nothing**.
+
+**What the search actually covers**, since it can only find the phone if it is
+somewhere it looked:
+
+* the **private ranges only** — `192.168.x.x`, `10.x.x.x`, `172.16–31.x.x` — one
+  `/24` for **each** address this computer holds (a second NIC or a VPN with its
+  own `10.x` address included, so the wrong network does not get scanned instead
+  of the right one);
+* port **22**, or whatever `--port` says. `22` is OpenSSH's default, and the stock
+  `openssh-server` config on a jailbroken device leaves `Port 22` commented out,
+  which means the default applies. Some jailbreaks listen on a second port as
+  well — the launchd plist on the device this was written for opens **2222** too;
+* **not** the phone if it is on a different network from this computer (a guest
+  SSID, mobile data), not a LAN bigger than a `/24` where the phone sits outside
+  this computer's own range, and not a non-default port without `--port`. Give the
+  address yourself in those cases: `--device mobile@<phone ip> --port <n>`.
 
 ### Specifying the connection yourself
 
@@ -72,6 +88,7 @@ For the cases the search cannot cover, or when it fails:
 | `--password <pw>` | The password for the `mobile` account **on the phone** — the one the jailbreak asked you to set (`alpine` if you never did). Omit it and it prompts. |
 | `--dry-run` | Prints what it intends to do and **changes nothing**. |
 | `--key <file>` | Use an SSH private key instead of a password. |
+| `--port <n>` | SSH port. Default 22, which is OpenSSH's own default. Also the port the search scans. |
 | `--transport putty\|openssh` | Force which SSH client to use. By default PuTTY is used when it is installed, and the built-in `ssh` when it is not. |
 | `--hostkey <fp>` | Pin the host key (by default it is learned on first contact). |
 

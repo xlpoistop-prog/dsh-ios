@@ -151,6 +151,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 step "transport"
 
 RUN=""; PUT=""; MODE=""
+# Only one pair of these is ever set. They are initialised because `set -u` is
+# on: on the OpenSSH path PLINK_BIN is never assigned, and an unset reference
+# aborts the script with "unbound variable" instead of doing anything useful.
+PLINK_BIN=""; PSCP_BIN=""
 
 # Find a tool on PATH, then at the given paths, then with .exe appended -- the
 # last two matter on Windows, where these binaries are rarely on PATH.
@@ -274,7 +278,11 @@ putty_opts() {
 ssh_opts() {
   _o=""
   if [ -n "$PORT" ]; then _o="-p $PORT"; fi
-  _o="$_o -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
+  # ConnectTimeout covers the banner exchange and key exchange too, not just the
+  # TCP connect -- which is exactly where this transport fails. 10 s rather than
+  # 20 because the retry below triples whatever it is set to, and a connection to
+  # a phone on the same Wi-Fi takes about a third of a second.
+  _o="$_o -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
   # Keepalives, so that a middlebox with a short idle timeout cannot cut a long
   # step (tar -xf, install.sh) in half and make it look like a failure.
   _o="$_o -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
@@ -379,6 +387,37 @@ dev_q() {
   dev "$1" 2>/dev/null
 }
 
+# Ask whether anything is listening on 127.0.0.1:22, without assuming plink.
+#
+# This runs before DEVICE exists, so dev() cannot be used, and hard-coding plink
+# is what made the no-PuTTY path abort with "PLINK_BIN: unbound variable" as soon
+# as --device was omitted -- which is the one case this whole search exists for.
+# Any non-empty answer other than a refusal counts as "something is there": the
+# host key has not been learned yet at this point, so a real connection would
+# fail on that and say nothing about whether a server is listening.
+#
+# Retried only on the transient signatures, not on a refusal -- a refusal is the
+# normal answer when no USB channel is open, and retrying it would add four
+# seconds to every run that does not use i4Tools.
+probe_127() {
+  _n=1
+  while :; do
+    # shellcheck disable=SC2086
+    if [ "$MODE" = "putty" ]; then
+      _p127_out="$( "$PLINK_BIN" $(putty_opts) mobile@127.0.0.1 "exit" 2>&1 || true )"
+    else
+      _p127_out="$( auth ssh $(ssh_opts) mobile@127.0.0.1 "exit" 2>&1 || true )"
+    fi
+    case "$_p127_out" in
+      *"banner exchange"*|*"timed out"*|*"Timeout"*)
+        [ "$_n" -ge 3 ] && break
+        _n=$((_n + 1)); sleep 2 ;;
+      *) break ;;
+    esac
+  done
+  printf '%s' "$_p127_out"
+}
+
 # Run a command that changes something. Skipped under --dry-run.
 mutate() {
   if [ "$DRY_RUN" = "1" ]; then
@@ -457,33 +496,46 @@ fi
 #
 #   1. mobile@127.0.0.1 -- instant, and correct when i4Tools' USB channel is
 #      open. Worth trying first because it costs nothing.
-#   2. scan this machine's own subnet for hosts with port 22 open.
+#   2. scan this machine's own local networks for a host running SSH.
 #
-# The scan is deliberately narrow: it only looks at the subnet the computer is
-# already on, and only at port 22. It is not a general port scanner.
+# The scan is deliberately narrow: only the private ranges, only the /24s this
+# computer itself is on, and only the one port the connection will use (22 unless
+# --port says otherwise). It is not a general port scanner.
 # ---------------------------------------------------------------------------
 DEVICE_GIVEN=0
 if [ -n "$DEVICE" ]; then DEVICE_GIVEN=1; fi
 
-# The local /24, from whichever interface owns the default route.
-local_subnet() {
+# Every local /24 worth scanning, one per line.
+#
+# Not just the first private address. A machine can hold several at once -- a
+# VPN or proxy tunnel that gave itself a 10.x address, a second NIC, a Docker or
+# Hyper-V switch -- and picking the wrong one means scanning a network the phone
+# was never on, then reporting "found nothing" as if the phone were off. So emit
+# them all and let the caller try each.
+#
+# Only the three private ranges are considered, which is what keeps a transparent
+# proxy out of this: Clash, Meta and friends hand themselves an address in
+# 198.18.0.0/15, which the test below rejects. VMware and the loopback are always
+# present and never carry the phone.
+local_subnets() {
   if command -v powershell.exe >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; then
     _ps="$(command -v powershell.exe 2>/dev/null || command -v powershell)"
     "$_ps" -NoProfile -Command "
       Get-NetIPAddress -AddressFamily IPv4 |
         Where-Object { \$_.IPAddress -match '^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01]))\.' -and
                        \$_.InterfaceAlias -notmatch 'VMware|VirtualBox|Loopback|vEthernet' } |
-        Select-Object -First 1 -ExpandProperty IPAddress" 2>/dev/null | tr -d '\r' |
-      awk -F. '{print $1"."$2"."$3}'
+        Select-Object -ExpandProperty IPAddress" 2>/dev/null | tr -d '\r' |
+      awk -F. 'NF == 4 {print $1"."$2"."$3}' | sort -u
+  elif command -v ip >/dev/null 2>&1; then
+    # Linux / WSL
+    ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 |
+      grep -E '^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01]))\.' |
+      awk -F. '{print $1"."$2"."$3}' | sort -u
   else
-    # Linux / macOS / WSL
-    if command -v ip >/dev/null 2>&1; then
-      ip -4 route get 1.1.1.1 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}' | awk -F. '{print $1"."$2"."$3}'
-    else
-      route -n get default 2>/dev/null | grep -o 'interface: .*' | awk '{print $2}' |
-        xargs -I{} ifconfig {} 2>/dev/null | grep -o 'inet [0-9.]*' | head -1 |
-        awk '{print $2}' | awk -F. '{print $1"."$2"."$3}'
-    fi
+    # macOS
+    route -n get default 2>/dev/null | grep -o 'interface: .*' | awk '{print $2}' |
+      xargs -I{} ifconfig {} 2>/dev/null | grep -o 'inet [0-9.]*' | head -1 |
+      awk '{print $2}' | awk -F. 'NF == 4 {print $1"."$2"."$3}'
   fi
 }
 
@@ -499,6 +551,7 @@ local_subnet() {
 # Measured on the machine this was written for: 2.8 s for a /24, one hit.
 scan_ssh_hosts() {
   _base="$1"
+  _port="${2:-22}"
   [ -n "$_base" ] || return 0
 
   if command -v powershell.exe >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; then
@@ -506,11 +559,11 @@ scan_ssh_hosts() {
     _tmp="$(mktemp -t sshscan.XXXXXX).ps1"
     # A quoted heredoc, so nothing in the PowerShell needs shell escaping.
     cat > "$_tmp" <<'PSEOF'
-param([string]$Base, [string]$User)
+param([string]$Base, [int]$Port)
 $tasks = 1..254 | ForEach-Object {
   $ip = "$Base.$_"
   $c = New-Object Net.Sockets.TcpClient
-  [pscustomobject]@{ Ip = $ip; Client = $c; Task = $c.ConnectAsync($ip, 22) }
+  [pscustomobject]@{ Ip = $ip; Client = $c; Task = $c.ConnectAsync($ip, $Port) }
 }
 [void][Threading.Tasks.Task]::WaitAll($tasks.Task, 1200)
 
@@ -533,13 +586,13 @@ if ($reads) { [void][Threading.Tasks.Task]::WaitAll(@($reads.Task), 900) }
 
 @($tasks) | ForEach-Object { try { $_.Client.Close() } catch {} }
 PSEOF
-    "$_ps" -NoProfile -ExecutionPolicy Bypass -File "$_tmp" -Base "$_base" 2>/dev/null | tr -d '\r'
+    "$_ps" -NoProfile -ExecutionPolicy Bypass -File "$_tmp" -Base "$_base" -Port "$_port" 2>/dev/null | tr -d '\r'
     rm -f "$_tmp"
 
   elif command -v nc >/dev/null 2>&1; then
     # Sequential and slower, but the same banner test.
     for _i in $(seq 1 254); do
-      _b="$(nc -w 1 "$_base.$_i" 22 </dev/null 2>/dev/null | head -1 | tr -d '\r')"
+      _b="$(nc -w 1 "$_base.$_i" "$_port" </dev/null 2>/dev/null | head -1 | tr -d '\r')"
       case "$_b" in SSH-*) echo "$_base.$_i $_b" ;; esac
     done
   fi
@@ -554,9 +607,9 @@ if [ "$DEVICE_GIVEN" = "0" ]; then
   #
   # This is a liveness probe, not an authentication attempt: at this point the
   # host key has not been learned yet, so a real connection would fail on that
-  # and tell us nothing. Instead, read what plink says -- "Connection refused"
-  # means nothing is listening, anything else means something is.
-  _p127="$("$PLINK_BIN" -ssh -batch -pw "$PASSWORD" mobile@127.0.0.1 "exit" 2>&1 || true)"
+  # and tell us nothing. Instead, read what the client says -- "Connection
+  # refused" means nothing is listening, anything else means something is.
+  _p127="$(probe_127)"
   case "$_p127" in
     *"Connection refused"*|*"connection refused"*)
       _have127=0 ;;
@@ -567,34 +620,49 @@ if [ "$DEVICE_GIVEN" = "0" ]; then
     DEVICE="mobile@127.0.0.1"
     note "something is listening on 127.0.0.1:22 — assuming that is the phone"
   else
-    note "nothing on 127.0.0.1; scanning the local network for port 22..."
-    _subnet="$(local_subnet)"
-    if [ -z "$_subnet" ]; then
+    # The port the scan uses is the port the connection will use: sshd is on 22
+    # by default (the stock openssh-server config leaves "Port 22" commented out)
+    # but --port has to carry through to the search, or it would look for the
+    # phone somewhere it was told the phone is not.
+    _port="${PORT:-22}"
+    note "nothing on 127.0.0.1; scanning the local network for SSH on port $_port..."
+
+    _found=""
+    _scanned=""
+    for _subnet in $(local_subnets); do
+      [ -n "$_subnet" ] || continue
+      note "subnet $_subnet.0/24"
+      _scanned="$_scanned $_subnet.0/24"
+      # Each line is "ip SSH-2.0-OpenSSH_x.y"; only the address is needed here.
+      _hits="$(scan_ssh_hosts "$_subnet" "$_port" | awk 'NF {print $1}')"
+      _found="$(printf '%s\n%s\n' "$_found" "$_hits" | grep . || true)"
+    done
+
+    if [ -z "$_scanned" ]; then
       die "could not work out this computer's subnet.
    Pass the phone's address explicitly:  --device mobile@<phone ip>
    The phone's IP is in Settings -> Wi-Fi on the phone."
     fi
-    note "subnet $_subnet.0/24"
-
-    # Each line is "ip SSH-2.0-OpenSSH_x.y"; only the address is needed here.
-    _found="$(scan_ssh_hosts "$_subnet" | awk 'NF {print $1}')"
     _count="$(printf '%s\n' "$_found" | grep -c . || true)"
 
     if [ "$_count" = "0" ]; then
-      die "found no SSH server in $_subnet.0/24.
+      die "found no SSH server on port $_port in:$_scanned
 
    Check that:
      * the phone is on the same Wi-Fi as this computer
      * OpenSSH is installed on the phone (openssh-server from Sileo)
      * the jailbreak is active
 
-   Or give the address yourself:  --device mobile@<phone ip>"
+   Or give the address yourself:  --device mobile@<phone ip>
+   If this computer sits on a larger network than one /24 (a /16, say), the
+   phone can be outside the range scanned here -- --device again.
+   If sshd on the phone listens on another port, pass --port."
     elif [ "$_count" = "1" ]; then
       DEVICE="mobile@$_found"
       note "found $_found"
     else
       say ""
-      say "Several hosts answered on port 22:"
+      say "Several hosts answered on port $_port:"
       printf '%s\n' "$_found" | sed 's/^/     /'
       say ""
       die "pick one and pass it explicitly:
