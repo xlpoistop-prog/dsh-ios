@@ -153,6 +153,24 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # command line, so sshpass is used where it exists (Linux, macOS) and the
 # SSH_ASKPASS helper below where it does not (Windows). --transport forces one.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# dry run, announced before anything else
+#
+# The natural reading of "--dry-run" is "no connection, no questions", and that
+# is not what this is: the plan depends on what is already installed on the
+# phone, so the phone is contacted and read. Everything sent to it is read-only.
+#
+# So say so up front. Being asked for a password immediately after asking for a
+# dry run reads as the flag having been ignored, which is a bad way to start.
+# ---------------------------------------------------------------------------
+if [ "$DRY_RUN" = "1" ]; then
+  step "dry run"
+  say "Nothing will be written -- not on the phone, not on this computer."
+  say "The phone is still contacted and read, because the plan depends on what is"
+  say "already installed there. The password prompt below is expected; Ctrl-C stops"
+  say "it there, and nothing has been written at that point either."
+fi
+
 step "transport"
 
 RUN=""; PUT=""; MODE=""
@@ -481,7 +499,10 @@ if [ -z "$PASSWORD" ] && [ -z "$KEYFILE" ]; then
    This script needs one or the other to log in to the phone. Either:
      --password <pw>    the password the jailbreak asked you to set
                         (OpenSSH's default is alpine if you never set one)
-     --key <file>       an SSH private key, if you have set one up"
+     --key <file>       an SSH private key, if you have set one up
+
+   --dry-run still needs it too: the plan is built from what is already on the
+   phone, so it has to look."
 fi
 
 # Set the OpenSSH password helper up now, in the main shell, rather than on the

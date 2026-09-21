@@ -52,7 +52,9 @@ SSH servers (by reading their banners, not by testing whether the port is open) 
 (`alpine` if you never set one).
 
 > If you would rather look before leaping, add `--dry-run` to the last line. It
-> prints what it intends to do and **changes nothing**.
+> prints what it intends to do and **changes nothing** — but it still contacts the
+> phone and still asks for the password, because the plan is built from what is
+> already installed there. Everything it runs on the phone is read-only.
 
 **What the search actually covers**, since it can only find the phone if it is
 somewhere it looked:
@@ -86,7 +88,7 @@ For the cases the search cannot cover, or when it fails:
 |---|---|
 | `--device USER@HOST` | **How to reach the phone.** `mobile` is the account name **on the phone** (iOS always has `root` and `mobile`; use `mobile`, since root login is normally disabled). Omit it and the script searches. |
 | `--password <pw>` | The password for the `mobile` account **on the phone** — the one the jailbreak asked you to set (`alpine` if you never did). Omit it and it prompts. |
-| `--dry-run` | Prints what it intends to do and **changes nothing**. |
+| `--dry-run` | Prints what it intends to do and **changes nothing**. It still connects and still asks for the password — the plan depends on what is already installed. |
 | `--key <file>` | Use an SSH private key instead of a password. |
 | `--port <n>` | SSH port. Default 22, which is OpenSSH's own default. Also the port the search scans. |
 | `--push-only` | Copy the repo across and stop: no Node, no DSH tree, no `install.sh`, no restart. For checking that a transfer works. |
