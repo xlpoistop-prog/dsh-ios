@@ -89,6 +89,7 @@ For the cases the search cannot cover, or when it fails:
 | `--dry-run` | Prints what it intends to do and **changes nothing**. |
 | `--key <file>` | Use an SSH private key instead of a password. |
 | `--port <n>` | SSH port. Default 22, which is OpenSSH's own default. Also the port the search scans. |
+| `--push-only` | Copy the repo across and stop: no Node, no DSH tree, no `install.sh`, no restart. For checking that a transfer works. |
 | `--transport putty\|openssh` | Force which SSH client to use. By default PuTTY is used when it is installed, and the built-in `ssh` when it is not. |
 | `--hostkey <fp>` | Pin the host key (by default it is learned on first contact). |
 

@@ -35,6 +35,7 @@ DSH_VERSION=""
 SKIP_NODE=0
 SKIP_DSH=0
 SKIP_START=0
+PUSH_ONLY=0
 TRANSPORT=""
 DRY_RUN=0
 WORK=""
@@ -87,6 +88,9 @@ Options:
   --skip-node             Do not install Node
   --skip-dsh              Do not install the DSH tree
   --skip-start            Install but do not launch
+  --push-only             Copy the repo across and stop there: no Node, no DSH
+                          tree, no install.sh, no restart. For checking that a
+                          transfer works, without touching a working install
   --transport T           Force 'putty' or 'openssh'
   --dry-run               Print the plan, change nothing
   -h, --help
@@ -107,6 +111,7 @@ while [ $# -gt 0 ]; do
     --skip-node)    SKIP_NODE=1 ;;
     --skip-dsh)     SKIP_DSH=1 ;;
     --skip-start)   SKIP_START=1 ;;
+    --push-only)    PUSH_ONLY=1; SKIP_NODE=1; SKIP_DSH=1; SKIP_START=1 ;;
     --transport)    shift; TRANSPORT="$1" ;;
     --dry-run)      DRY_RUN=1 ;;
     -h|--help)      usage ;;
@@ -898,6 +903,13 @@ push_tar() {
 }
 push_tar
 note "repo contents copied to $INSTALL_DIR"
+
+if [ "$PUSH_ONLY" = "1" ]; then
+  step "done"
+  say "Pushed the repo to $INSTALL_DIR on the phone and stopped there."
+  say "Nothing was installed and nothing was started (--push-only)."
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # 4. adapt
