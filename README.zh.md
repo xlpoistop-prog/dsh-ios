@@ -272,6 +272,20 @@ docs/                       三份长文设计笔记
 
 站在这些之上：
 
+* **越狱本身。** 这个项目完全是它的下游产物。这个移植之所以可能存在，
+  只是因为你可以在自己的设备上运行一个不受沙箱限制的二进制 ——
+  而那是很多人花时间做出来的：
+  * **Relaxin** —— 本项目构建和验证所基于的越狱（iOS 17.1.1）。
+  * **roothide Bootstrap** —— 提供 jbroot 机制，也就是
+    [`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md) 花了两百行去理清的东西。
+    本仓库里关于路径、`mmap`、`dlopen` 的**每一条结论都是那个设计的后果** ——
+    而且一旦理解了，你会发现它是一个合理的设计。
+  * **[Dopamine](https://github.com/opa334/Dopamine)**（opa334）以及它确立的
+    rootless 路线 —— 现在整个生态大多建立在这个思路上。
+  * **[Procursus](https://github.com/ProcursusTeam/Procursus)** —— 提供 bootstrap 用户态，
+    也就是这个安装器依赖的 `ldid`、`tar`、`zsh`。
+
+  **这些都不是小事，而且都不是有偿的。**
 * [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) —— MIT
 * [Cordis](https://github.com/cordiverse/cordis) —— DSH 的插件框架
 * **交叉编译的 iOS 移植**（[`ddddddedcds/deepseek-harness-ios`](https://github.com/ddddddedcds/deepseek-harness-ios)

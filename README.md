@@ -288,6 +288,21 @@ docs/                       the two long-form design notes
 
 Standing on:
 
+* **The jailbreak.** Everything here is downstream of it. This port exists only
+  because it is possible to run an unsandboxed binary on a device you own, and
+  that is the work of people who gave their time to make it so:
+  * **Relaxin** — the jailbreak this was built and verified against (iOS 17.1.1).
+  * **roothide Bootstrap** — provides the jbroot mechanism that
+    [`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md) spends 200 lines
+    untangling. Every pointer in this repo about paths, `mmap` and `dlopen` is a
+    consequence of that design, and it is a design that makes sense once you
+    understand it.
+  * **[Dopamine](https://github.com/opa334/Dopamine)** (opa334) and the rootless
+    lineage it established — the approach most of the ecosystem now builds on.
+  * **[Procursus](https://github.com/ProcursusTeam/Procursus)** — the bootstrap
+    userland supplying the `ldid`, `tar` and `zsh` this installer depends on.
+
+  None of this is a small thing to have done, and none of it is paid for.
 * [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — MIT
 * [Cordis](https://github.com/cordiverse/cordis) — the plugin framework DSH is built on
 * The **cross-compiled iOS port** ([`ddddddedcds/deepseek-harness-ios`](https://github.com/ddddddedcds/deepseek-harness-ios),
