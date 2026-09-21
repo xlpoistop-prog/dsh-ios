@@ -10,10 +10,17 @@
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
-
-./bootstrap.sh --device mobile@127.0.0.1 --password <密码> --dry-run   # 1. 先看计划
-./bootstrap.sh --device mobile@127.0.0.1 --password <密码>            # 2. 真装
+./bootstrap.sh --device mobile@127.0.0.1 --password <密码>
 ```
+
+**就这一条。** 建议第一次先加个 `--dry-run` 看一眼 —— 它只打印打算做什么，
+**不改任何东西**：
+
+```sh
+./bootstrap.sh --device mobile@127.0.0.1 --password <密码> --dry-run
+```
+
+看着没问题，把 `--dry-run` 去掉，跑上面那条就是了。
 
 **这几个参数是什么意思。** 脚本跑在**你的电脑上**，不在手机上 —— 它是通过 SSH 去操作**手机**：
 
@@ -22,7 +29,7 @@ cd dsh-ios
 | `git clone` / `cd` | 把仓库拉到本机并进入目录。 |
 | `--device 用户名@主机` | **怎么连到手机。** `mobile` 是**手机上的账号名**（iOS 固定有 `root` 和 `mobile` 两个，用 `mobile` —— `root` 登录通常是关着的）。`主机`填什么取决于你怎么连，见下表。 |
 | `--password <密码>` | **手机**上 `mobile` 账号的密码 —— **越狱成功时让你设置的那个**。如果当时没设，OpenSSH 的默认密码是 `alpine`。 |
-| `--dry-run` | **先跑这一条。** 它只打印打算做什么，**不改任何东西**。看着没问题，再跑下面那条（去掉 `--dry-run`）。 |
+| `--dry-run` | 只打印打算做什么，**不改任何东西**。建议第一次加上它先看一眼，然后去掉它真跑。 |
 
 **`--device` 里的主机填什么，取决于你的电脑怎么连到手机：**
 

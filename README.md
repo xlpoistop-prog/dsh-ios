@@ -10,10 +10,17 @@ on a jailbroken iPhone — with **no Mac, no Xcode, and no cross-compilation**.
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
-
-./bootstrap.sh --device mobile@127.0.0.1 --password <pw> --dry-run   # 1. look first
-./bootstrap.sh --device mobile@127.0.0.1 --password <pw>             # 2. do it
+./bootstrap.sh --device mobile@127.0.0.1 --password <pw>
 ```
+
+**That is the whole thing.** Worth adding `--dry-run` the first time — it prints
+what it intends to do and changes nothing:
+
+```sh
+./bootstrap.sh --device mobile@127.0.0.1 --password <pw> --dry-run
+```
+
+If that looks right, drop `--dry-run` and run the first one.
 
 **What those lines mean.** The script runs **on your computer**, not on the
 phone — it drives the **phone** over SSH:
@@ -23,7 +30,7 @@ phone — it drives the **phone** over SSH:
 | `git clone` / `cd` | Fetch this repo and enter it. |
 | `--device USER@HOST` | **How to reach the phone.** `mobile` is the account name **on the phone** (iOS always has `root` and `mobile`; use `mobile`, since root login is normally disabled). What goes in `HOST` depends on how you connect — see below. |
 | `--password <pw>` | The password for the `mobile` account **on the phone** — **the one the jailbreak asked you to set when it succeeded**. If you were never asked, OpenSSH's default is `alpine`. |
-| `--dry-run` | **Run this one first.** It prints what it intends to do and changes nothing. If it looks right, run the second line without it. |
+| `--dry-run` | Prints what it intends to do, changes nothing. Worth adding the first time; then drop it for the real run. |
 
 **What to put in `HOST` depends on how your computer reaches the phone:**
 
