@@ -122,12 +122,19 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # transport
 #
 # PuTTY first, when it is installed. Not merely precedence -- measured, and the
-# numbers are why this order matters. On the machine this was written for, which
-# sits behind a transparent (TUN) proxy, 20 sequential connections gave:
+# numbers are why this order matters. On the machine this was written for, 20
+# sequential connections gave:
 #
 #     plink   20/20
-#     ssh     17/20   (three died in "Connection timed out during banner
-#                      exchange", before authenticating at all)
+#     ssh     17/20   twice, failing at the same three positions (6, 12, 18)
+#                     both times, always "Connection timed out during banner
+#                     exchange" -- before authenticating at all. Periodic, then,
+#                     rather than random noise.
+#
+# The two runs were not in the same network state: the first had no proxy adapter
+# up, the second had Meta Tunnel running. Identical results -- so the ssh
+# weakness is not the proxy's doing. A proxy is just one more thing that can end
+# up on the route to the phone, which is why it is worth warning about (below).
 #
 # plink also takes the password as an argument (-pw), so there is no helper
 # program and no environment variable in the middle of it. It is frequently

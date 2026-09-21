@@ -36,12 +36,13 @@ cd dsh-ios
 
 > ⚠️ **One exception, and it matters: if a proxy or VPN is running on this
 > computer — Clash, Surge, Meta, sing-box, and especially in TUN or global mode —
-> use PuTTY.** Those take over the route to the local network as well, and the
-> built-in `ssh` is at its weakest exactly there: on one machine, 20 sequential
-> connections gave **plink 20/20** and **`ssh` 17/20**, every failure
-> `Connection timed out during banner exchange` — i.e. it never got as far as
-> authenticating. The script looks for a running proxy and warns you when you are
-> on the built-in `ssh`.
+> use PuTTY.** Those take over the route to the local network as well, which is
+> one more thing standing between this computer and the phone. On one machine, 20
+> sequential connections gave **plink 20/20** and **`ssh` 17/20** — measured
+> twice, with the proxy off and on, failing in exactly the same three places both
+> times, always `Connection timed out during banner exchange`, i.e. never getting
+> as far as authenticating. The script looks for a running proxy and warns you
+> when you are on the built-in `ssh`.
 
 **No IP to look up, no arguments to work out.** The script finds the phone
 itself — first checking whether anything is listening on `127.0.0.1` (a
@@ -232,13 +233,18 @@ it is not.
 
 **⚠️ But if a proxy or VPN is running on this computer, use PuTTY.** Transparent
 proxies — Clash, Surge, Meta, sing-box, TUN mode generally — take over the route
-to the local network too, and that is exactly where the built-in `ssh` is
-weakest. Measured on one machine, 20 sequential connections gave **plink 20/20**
-and **`ssh` 17/20**, every failure `Connection timed out during banner exchange`,
-i.e. before authenticating at all. The script looks for a running proxy (a
-Wintun/TAP adapter, or a fake-IP DNS server such as `198.18.x.x`) and warns you
-when you are on the built-in `ssh`; it also retries every failed connection twice
-before giving up on it.
+to the local network too, and the built-in `ssh` is the transport that suffers
+first. Measured on one machine, 20 sequential connections gave **plink 20/20**
+and **`ssh` 17/20**, run twice — once with no proxy and once with one up — and it
+failed at exactly the same three positions each time, always
+`Connection timed out during banner exchange`, i.e. before authenticating at all.
+So the weakness is not the proxy's doing; a proxy is just one more thing that can
+sit on the route to the phone. Being on the built-in `ssh` *and* behind a proxy
+is the combination worth avoiding.
+
+The script looks for a running proxy (a Wintun/TAP adapter, or a fake-IP DNS
+server such as `198.18.x.x`) and warns you when you are on the built-in `ssh`; it
+also retries every failed connection twice before giving up on it.
 
 How the password reaches `ssh`, which is the only thing that differs:
 it never goes on the command line, and Windows has no `sshpass`, so the script
