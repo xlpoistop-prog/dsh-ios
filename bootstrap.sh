@@ -23,7 +23,7 @@ set -eu
 # ---------------------------------------------------------------------------
 # defaults
 # ---------------------------------------------------------------------------
-DEVICE="mobile@127.0.0.1"
+DEVICE=""
 PORT=""
 PASSWORD=""
 KEYFILE=""
@@ -57,7 +57,9 @@ usage() {
   cat <<'EOF'
 
 Options:
-  --device USER@HOST      SSH target                (default mobile@127.0.0.1)
+  --device USER@HOST      SSH target. Omit it and the script looks for the
+                          phone itself: 127.0.0.1 first, then this computer's
+                          own subnet on port 22
   --port N                SSH port
   --password PASS         Password for the phone's mobile account
                           (the one the jailbreak asked you to set);
@@ -259,6 +261,193 @@ push() {  # push <local> <dirname-under-/rootfs> [newname]
 
 STAGE="/var/mobile/Documents/.dsh-ios-stage"
 
+# ---------------------------------------------------------------------------
+# password, if it was not given
+#
+# Asked for before looking for the phone, because the search itself needs to
+# authenticate -- there is no point finding a host you cannot log in to.
+#
+# Only prompted when stdin is a terminal: with stdin redirected, `read` would
+# consume the redirect rather than wait for a person.
+# ---------------------------------------------------------------------------
+if [ -z "$PASSWORD" ] && [ -z "$KEYFILE" ]; then
+  if [ -t 0 ]; then
+    say ""
+    printf '%sPassword for the phone (mobile account): %s' "$B" "$R"
+    stty -echo 2>/dev/null || true
+    read -r PASSWORD
+    stty echo 2>/dev/null || true
+    printf '\n'
+  fi
+fi
+
+if [ -z "$PASSWORD" ] && [ -z "$KEYFILE" ]; then
+  die "no password and no SSH key.
+
+   This script needs one or the other to log in to the phone. Either:
+     --password <pw>    the password the jailbreak asked you to set
+                        (OpenSSH's default is alpine if you never set one)
+     --key <file>       an SSH private key, if you have set one up"
+fi
+
+# ---------------------------------------------------------------------------
+# find the phone, if it was not given
+#
+# The fastest route for most people is: phone and computer on the same Wi-Fi,
+# run this, type the password. No IP to look up and no extra tools -- so when
+# --device is omitted, try the obvious things before giving up.
+#
+#   1. mobile@127.0.0.1 -- instant, and correct when i4Tools' USB channel is
+#      open. Worth trying first because it costs nothing.
+#   2. scan this machine's own subnet for hosts with port 22 open.
+#
+# The scan is deliberately narrow: it only looks at the subnet the computer is
+# already on, and only at port 22. It is not a general port scanner.
+# ---------------------------------------------------------------------------
+DEVICE_GIVEN=0
+if [ -n "$DEVICE" ]; then DEVICE_GIVEN=1; fi
+
+# The local /24, from whichever interface owns the default route.
+local_subnet() {
+  if command -v powershell.exe >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; then
+    _ps="$(command -v powershell.exe 2>/dev/null || command -v powershell)"
+    "$_ps" -NoProfile -Command "
+      Get-NetIPAddress -AddressFamily IPv4 |
+        Where-Object { \$_.IPAddress -match '^(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[01]))\.' -and
+                       \$_.InterfaceAlias -notmatch 'VMware|VirtualBox|Loopback|vEthernet' } |
+        Select-Object -First 1 -ExpandProperty IPAddress" 2>/dev/null | tr -d '\r' |
+      awk -F. '{print $1"."$2"."$3}'
+  else
+    # Linux / macOS / WSL
+    if command -v ip >/dev/null 2>&1; then
+      ip -4 route get 1.1.1.1 2>/dev/null | grep -o 'src [0-9.]*' | awk '{print $2}' | awk -F. '{print $1"."$2"."$3}'
+    else
+      route -n get default 2>/dev/null | grep -o 'interface: .*' | awk '{print $2}' |
+        xargs -I{} ifconfig {} 2>/dev/null | grep -o 'inet [0-9.]*' | head -1 |
+        awk '{print $2}' | awk -F. '{print $1"."$2"."$3}'
+    fi
+  fi
+}
+
+# Print the addresses on a subnet that are running an SSH server.
+#
+# Not "that answer on port 22" -- that test is not good enough. With a
+# transparent/TUN proxy active (Clash, Surge and friends), every TCP connect
+# succeeds against every address, because the proxy accepts locally and resolves
+# upstream afterwards. A plain port scan then reports all 254 addresses as live.
+#
+# Reading the server's banner fixes it: a real sshd sends "SSH-2.0-..." the
+# instant the connection opens, and a proxy fronting nothing sends nothing.
+# Measured on the machine this was written for: 2.8 s for a /24, one hit.
+scan_ssh_hosts() {
+  _base="$1"
+  [ -n "$_base" ] || return 0
+
+  if command -v powershell.exe >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; then
+    _ps="$(command -v powershell.exe 2>/dev/null || command -v powershell)"
+    _tmp="$(mktemp -t sshscan.XXXXXX).ps1"
+    # A quoted heredoc, so nothing in the PowerShell needs shell escaping.
+    cat > "$_tmp" <<'PSEOF'
+param([string]$Base, [string]$User)
+$tasks = 1..254 | ForEach-Object {
+  $ip = "$Base.$_"
+  $c = New-Object Net.Sockets.TcpClient
+  [pscustomobject]@{ Ip = $ip; Client = $c; Task = $c.ConnectAsync($ip, 22) }
+}
+[void][Threading.Tasks.Task]::WaitAll($tasks.Task, 1200)
+
+$live = @($tasks | Where-Object { $_.Client.Connected })
+$reads = foreach ($l in $live) {
+  try {
+    $s = $l.Client.GetStream()
+    $buf = New-Object byte[] 64
+    [pscustomobject]@{ Ip = $l.Ip; Buf = $buf; Task = $s.ReadAsync($buf, 0, 64) }
+  } catch {}
+}
+if ($reads) { [void][Threading.Tasks.Task]::WaitAll(@($reads.Task), 900) }
+
+@($reads) |
+  Where-Object { $_.Task.Status -eq 'RanToCompletion' -and $_.Task.Result -gt 0 } |
+  ForEach-Object {
+    $line = [Text.Encoding]::ASCII.GetString($_.Buf, 0, $_.Task.Result).Trim()
+    if ($line -like 'SSH-*') { "$($_.Ip) $line" }
+  }
+
+@($tasks) | ForEach-Object { try { $_.Client.Close() } catch {} }
+PSEOF
+    "$_ps" -NoProfile -ExecutionPolicy Bypass -File "$_tmp" -Base "$_base" 2>/dev/null | tr -d '\r'
+    rm -f "$_tmp"
+
+  elif command -v nc >/dev/null 2>&1; then
+    # Sequential and slower, but the same banner test.
+    for _i in $(seq 1 254); do
+      _b="$(nc -w 1 "$_base.$_i" 22 </dev/null 2>/dev/null | head -1 | tr -d '\r')"
+      case "$_b" in SSH-*) echo "$_base.$_i $_b" ;; esac
+    done
+  fi
+}
+
+if [ "$DEVICE_GIVEN" = "0" ]; then
+  say ""
+  say "${B}No --device given, looking for the phone.${R}"
+  note "fastest route: phone and computer on the same Wi-Fi"
+
+  # 1. the USB-forwarded channel, if one is open.
+  #
+  # This is a liveness probe, not an authentication attempt: at this point the
+  # host key has not been learned yet, so a real connection would fail on that
+  # and tell us nothing. Instead, read what plink says -- "Connection refused"
+  # means nothing is listening, anything else means something is.
+  _p127="$("$PLINK_BIN" -ssh -batch -pw "$PASSWORD" mobile@127.0.0.1 "exit" 2>&1 || true)"
+  case "$_p127" in
+    *"Connection refused"*|*"connection refused"*)
+      _have127=0 ;;
+    *) _have127=1 ;;
+  esac
+
+  if [ "$_have127" = "1" ]; then
+    DEVICE="mobile@127.0.0.1"
+    note "something is listening on 127.0.0.1:22 — assuming that is the phone"
+  else
+    note "nothing on 127.0.0.1; scanning the local network for port 22..."
+    _subnet="$(local_subnet)"
+    if [ -z "$_subnet" ]; then
+      die "could not work out this computer's subnet.
+   Pass the phone's address explicitly:  --device mobile@<phone ip>
+   The phone's IP is in Settings -> Wi-Fi on the phone."
+    fi
+    note "subnet $_subnet.0/24"
+
+    # Each line is "ip SSH-2.0-OpenSSH_x.y"; only the address is needed here.
+    _found="$(scan_ssh_hosts "$_subnet" | awk 'NF {print $1}')"
+    _count="$(printf '%s\n' "$_found" | grep -c . || true)"
+
+    if [ "$_count" = "0" ]; then
+      die "found no SSH server in $_subnet.0/24.
+
+   Check that:
+     * the phone is on the same Wi-Fi as this computer
+     * OpenSSH is installed on the phone (openssh-server from Sileo)
+     * the jailbreak is active
+
+   Or give the address yourself:  --device mobile@<phone ip>"
+    elif [ "$_count" = "1" ]; then
+      DEVICE="mobile@$_found"
+      note "found $_found"
+    else
+      say ""
+      say "Several hosts answered on port 22:"
+      printf '%s\n' "$_found" | sed 's/^/     /'
+      say ""
+      die "pick one and pass it explicitly:
+     $0 --device mobile@<address> ...
+   The phone is usually identifiable as a device you do not recognise; its IP
+   is also shown in Settings -> Wi-Fi on the phone itself."
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # host key
 #
