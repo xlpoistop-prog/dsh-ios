@@ -34,6 +34,15 @@ cd dsh-ios
 > finds the phone on your Wi-Fi by itself. **Either way there is nothing to
 > install: same Wi-Fi, one command, one password.**
 
+> ⚠️ **One exception, and it matters: if a proxy or VPN is running on this
+> computer — Clash, Surge, Meta, sing-box, and especially in TUN or global mode —
+> use PuTTY.** Those take over the route to the local network as well, and the
+> built-in `ssh` is at its weakest exactly there: on one machine, 20 sequential
+> connections gave **plink 20/20** and **`ssh` 17/20**, every failure
+> `Connection timed out during banner exchange` — i.e. it never got as far as
+> authenticating. The script looks for a running proxy and warns you when you are
+> on the built-in `ssh`.
+
 **No IP to look up, no arguments to work out.** The script finds the phone
 itself — first checking whether anything is listening on `127.0.0.1` (a
 USB-forwarded channel), otherwise scanning this computer's own subnet for SSH
@@ -219,11 +228,17 @@ rest (`--key`, `--hostkey`, `--install-dir`, `--skip-node`, `--skip-dsh`, …).
 | WSL | as Linux | |
 
 Either one is fine — PuTTY is used when it is installed, the built-in `ssh` when
-it is not. That order is not a preference, though: behind a transparent (TUN)
-proxy — Clash, Surge, Meta and friends — 20 sequential connections measured
-**plink 20/20** and **OpenSSH 17/20**, the three failures all
-`Connection timed out during banner exchange`, i.e. before authenticating at all.
-Any failed connection is retried twice before the script gives up on it.
+it is not.
+
+**⚠️ But if a proxy or VPN is running on this computer, use PuTTY.** Transparent
+proxies — Clash, Surge, Meta, sing-box, TUN mode generally — take over the route
+to the local network too, and that is exactly where the built-in `ssh` is
+weakest. Measured on one machine, 20 sequential connections gave **plink 20/20**
+and **`ssh` 17/20**, every failure `Connection timed out during banner exchange`,
+i.e. before authenticating at all. The script looks for a running proxy (a
+Wintun/TAP adapter, or a fake-IP DNS server such as `198.18.x.x`) and warns you
+when you are on the built-in `ssh`; it also retries every failed connection twice
+before giving up on it.
 
 How the password reaches `ssh`, which is the only thing that differs:
 it never goes on the command line, and Windows has no `sshpass`, so the script

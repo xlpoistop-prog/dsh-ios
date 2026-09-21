@@ -27,6 +27,13 @@ cd dsh-ios
 > **你电脑上本来就有的 `ssh`**（Git Bash 自带一个，Windows 10/11 自己也带一个），
 > 并且在同一个 Wi-Fi 里自动找到手机。**两种都不需要你装任何东西 —— 同一个 Wi-Fi，一条命令，输一次密码。**
 
+> ⚠️ **但有一种情况例外，而且很重要：如果你电脑上开着代理 / VPN —— Clash、Surge、Meta、
+> sing-box 这类，尤其是 TUN 或全局模式 —— 请一定要用 PuTTY。** 这类工具会把**去往局域网的
+> 流量一起接管**，而系统自带的 `ssh` 恰恰在这种环境下最弱：同一台机器上连续测 20 次连接，
+> **plink 20/20**，自带 `ssh` **17/20**，那 3 次全是
+> `Connection timed out during banner exchange` —— **连认证都没走到**。
+> 脚本会检测代理，**只要你正在用自带的 `ssh` 就会主动警告你**。
+
 **不用查 IP、不用给参数。** 脚本会自己找手机 —— 先看 `127.0.0.1` 上有没有 USB 转发的
 SSH 通道，没有就**扫本网段的 22 端口**（读 SSH banner，不是简单看端口开没开）——
 **然后提示你输入密码**，就是越狱时设的那个（没设过的话默认是 `alpine`）。
@@ -187,11 +194,14 @@ i4Tools 的方便之处在于它**走 USB（usbmuxd）转发本地端口**，所
 | Linux / macOS | `ssh` + `scp`，要传密码再装 `sshpass` | 或者用密钥：`--key` |
 | WSL | 同 Linux | |
 
-两种都行 —— **装了 PuTTY 就用 PuTTY，没装就用自带的 `ssh`**。这个顺序不是偏好，是实测：
-在**透明（TUN）代理**后面（Clash、Surge、Meta 这类），连续 20 次连接的结果是
-**plink 20/20**、**OpenSSH 17/20** —— 那 3 次全是
-`Connection timed out during banner exchange`，也就是**还没开始认证就断了**。
-任何一次连接失败，脚本都会自动重试两次再报错。
+两种都行 —— **装了 PuTTY 就用 PuTTY，没装就用自带的 `ssh`**。
+
+**⚠️ 但只要这台电脑上开着代理 / VPN，就用 PuTTY。** 透明代理 —— Clash、Surge、Meta、
+sing-box、以及各种 TUN 模式 —— **会把去往局域网的流量一起接管**，而系统自带的 `ssh`
+恰恰在这种环境下最弱。同一台机器上连续测 20 次连接：**plink 20/20**、自带 `ssh` **17/20**，
+那 3 次全是 `Connection timed out during banner exchange`，**连认证都没走到**。
+脚本会检测代理（Wintun/TAP 网卡，或 `198.18.x.x` 这类 fake-IP DNS），
+**只要你正在用自带的 `ssh` 就会警告你**；任何一次连接失败它也都会自动重试两次。
 
 唯一的区别是密码怎么交进去：
 **它永远不出现在命令行上**，而 Windows 又没有 `sshpass`，所以脚本会写一个极小的

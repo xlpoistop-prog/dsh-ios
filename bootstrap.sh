@@ -211,6 +211,46 @@ if [ "$MODE" = "openssh" ] && ! command -v sshpass >/dev/null 2>&1; then
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# a running proxy is the case where the OpenSSH path is worst
+#
+# Transparent proxies and VPNs take over the route to the local network as well,
+# so a connection to the phone can be accepted locally by the proxy and then
+# never answered -- which is the banner-exchange timeout measured above, and the
+# reason PuTTY is tried first. Anyone who has no PuTTY deserves to be told this
+# before a run fails halfway, so look for the usual signs: a Wintun/TAP adapter
+# from Clash, Mihomo, Surge, sing-box, Meta, WireGuard or OpenVPN, or a fake-IP
+# DNS server (Clash and friends hand out 198.18.x.x/198.19.x.x).
+#
+# A warning, never an error: it does work, connections are retried.
+# ---------------------------------------------------------------------------
+if [ "$MODE" = "openssh" ] && { command -v powershell.exe >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; }; then
+  _ps="$(command -v powershell.exe 2>/dev/null || command -v powershell)"
+  _tmp="$(mktemp -t proxycheck.XXXXXX).ps1"
+  cat > "$_tmp" <<'PSEOF'
+$pattern = 'Wintun|TAP-Win32|TAP-Windows|Clash|Mihomo|Surge|sing-box|WireGuard|OpenVPN|Meta Tunnel'
+$hits = @()
+$hits += Get-NetAdapter -ErrorAction SilentlyContinue |
+         Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -match $pattern } |
+         ForEach-Object { $_.InterfaceDescription }
+$hits += Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+         Where-Object { $_.ServerAddresses -match '^198\.(18|19)\.' } |
+         ForEach-Object { "fake-IP DNS $($_.ServerAddresses -join ', ')" }
+if ($hits.Count -gt 0) { $hits[0] }
+PSEOF
+  _proxy="$( "$_ps" -NoProfile -ExecutionPolicy Bypass -File "$_tmp" 2>/dev/null | tr -d '\r' | head -1 )"
+  rm -f "$_tmp"
+  if [ -n "$_proxy" ]; then
+    warn "a proxy or VPN appears to be running ($_proxy).
+     Those take over the route to the local network too, and that is exactly
+     where this ssh is weak: measured on this machine, plink completed 20 of 20
+     connections and ssh 17 of 20, every failure a banner-exchange timeout
+     before authenticating. Connections are retried, so it usually still works
+     -- but while a proxy is on, PuTTY is the better tool. Install it and re-run
+     (it is found automatically), or pass --transport putty."
+  fi
+fi
+
 # Common options per transport.
 #
 # Built with `if` rather than `[ ... ] && printf`: under `set -e` a failing test
