@@ -471,8 +471,6 @@ push() {  # push <local> <dirname-under-/rootfs> [newname]
   fi
 }
 
-STAGE="/var/mobile/Documents/.dsh-ios-stage"
-
 # ---------------------------------------------------------------------------
 # password, if it was not given
 #
@@ -811,8 +809,6 @@ fi
 [ "$HAS_TAR" = "yes" ] || die "no tar on the phone — it ships with the base jailbreak;
    install it from Sileo if it is missing."
 
-mutate "mkdir -p '$STAGE'" >/dev/null 2>&1 || true
-
 # ---------------------------------------------------------------------------
 # 1. Node
 # ---------------------------------------------------------------------------
@@ -848,7 +844,10 @@ else
 
   say "   pushing to phone"
   push "$WORK/$NODE_BIN" "/var/mobile/Documents" "$NODE_BIN"
-  mutate "mkdir -p '$INSTALL_DIR' && cp '/rootfs/var/mobile/Documents/$NODE_BIN' '$INSTALL_DIR/node' && chmod 755 '$INSTALL_DIR/node'"
+  # The rm is part of the same chain on purpose; the copy has to succeed before
+  # the source goes. Without it a 74 MB binary is left sitting in your Documents
+  # for good -- the two tars are removed the same way, and this one was missed.
+  mutate "mkdir -p '$INSTALL_DIR' && cp '/rootfs/var/mobile/Documents/$NODE_BIN' '$INSTALL_DIR/node' && chmod 755 '$INSTALL_DIR/node' && rm -f '/rootfs/var/mobile/Documents/$NODE_BIN'"
 
   VER="$(dev_q "NODE_OPTIONS=--jitless '$INSTALL_DIR/node' --version" | tr -d '\r')"
   case "$VER" in

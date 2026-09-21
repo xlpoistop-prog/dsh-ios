@@ -247,6 +247,9 @@ rest (`--key`, `--hostkey`, `--install-dir`, `--skip-node`, `--skip-dsh`, …).
 4. **`ldid`** and **`tar`** — almost every bootstrap ships both. Check with
    `which ldid tar`.
 
+**Space on the phone:** a full install measured **423 MB** on the test device,
+71 MB of that the Node binary. Budget 450 MB.
+
 **On your computer** — one SSH client:
 
 | Platform | Use | Notes |
@@ -319,7 +322,8 @@ sh install.sh
 3. overlay the pure-JS image codec into `node_modules/sharp`,
 4. install the pure-JS ripgrep replacement,
 5. copy the three patched DSH files,
-6. rewrite the Mach-O platform byte on `pty.node` / `system.node` and re-sign,
+6. rewrite the Mach-O platform byte on the native addons (`pty.node`, and
+   `system.node` where a tree has one) and re-sign,
 7. inject the browser polyfills into the frontend's `index.html`.
 
 Then:
@@ -332,12 +336,61 @@ sh scripts/start.sh          # prints a Safari URL
 [`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md) for why it does what it
 does. `scripts/stop.sh` stops it.
 
-### Flags
+### `start.sh` flags
 
 ```sh
 sh scripts/start.sh 3081        # different port
 DSH_SAFE=1 sh scripts/start.sh  # do not kill unrelated node processes
 ```
+
+### The rest of `bootstrap.sh`'s flags
+
+`--help` lists every one. These are the ones not in the quick-start table:
+
+| Flag | Meaning |
+|---|---|
+| `--install-dir <dir>` | Where to install on the phone. Default `/var/mobile/Documents/dsh-ios`. |
+| `--dsh-version <v>` | Pin `@deepseek-ai/dsh` instead of taking the latest. |
+| `--node-url <url>` | Fetch the Node build from somewhere else. |
+| `--skip-node` / `--skip-dsh` / `--skip-start` | Leave that stage out. |
+| `--push-only` | Copy the repo across and stop — no install, no restart. |
+
+---
+
+## When it does not work
+
+A failed run is always safe to repeat: `bootstrap.sh` and `install.sh` are both
+idempotent, and every file `install.sh` replaces is kept as
+`<name>.dsh-ios.bak` first. Add `--dry-run` to see the plan without writing
+anything.
+
+The script's last line is usually the answer — it names what failed instead of
+just stopping. The ones worth recognising:
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `no usable SSH transport found` | There is neither PuTTY nor `ssh`/`scp` on `PATH`. | Install PuTTY, or run the script from Git Bash, which has `ssh`. |
+| `cannot reach mobile@…` | The connection failed. The text above it is the SSH client's own words, and the four usual causes are listed. | Test the connection on its own — `ssh mobile@127.0.0.1 "echo ok"`, or the `plink` equivalent. Nothing here will work until that does. |
+| `found no SSH server on port 22 in: …` | Nothing answered anywhere it looked. | Phone on another network (guest SSID, mobile data)? Non-default port (`--port`)? A LAN larger than a `/24`? Pass `--device mobile@<ip>` yourself. |
+| `Several hosts answered on port 22` | More than one SSH server replied and it refuses to guess. | Pick the phone out of the list and pass it: `--device mobile@<ip>`. |
+| `checksum mismatch for …` | The downloaded Node does not match the pinned hash. | Do not continue. Re-run; if it repeats, the source is wrong or changed — `--node-url` points elsewhere. |
+| `no npm on this machine` | The phone has no DSH tree and the computer has no npm to build one. | Install Node.js on the computer, or copy a tree over — [from scratch](docs/install-from-scratch.md). |
+| `install.sh failed on the phone` | The adapt step stopped; the phone's output just above says where. | Re-run. Backups make it safe, and the second run usually shows a real cause rather than a first-run one. |
+| The URL opens, but the page is blank or the picker keeps reverting | Token, or permission mode. | Open the full `?token=…` URL once — Safari keeps the cookie — and set the permission mode to **full access**. |
+| `EADDRINUSE`, or "started" but nothing answers | A stale server still holds the port, and `pkill -f` does not work on this platform. | `sh scripts/start.sh` kills it by pidfile and falls back to `killall -9 node`. `DSH_SAFE=1` makes it refuse instead of killing. |
+| It worked, then you re-jailbroke | The install lives inside jbroot, which a re-jailbreak replaces. | Re-run `bootstrap.sh`. |
+
+### Rolling back, or starting over
+
+* **Undo the adaptation:** every file `install.sh` replaces has a
+  `<name>.dsh-ios.bak` next to it, including the patched native addon. Copy them
+  back and restart.
+* **Remove it entirely:** delete the install directory (default
+  `/var/mobile/Documents/dsh-ios`) and stop the server. Everything the install
+  writes on the phone lives inside that directory — the DSH tree, `dsh-home` with
+  your sessions, and the browser polyfills.
+* **Start clean without re-downloading anything:** `--push-only` re-copies the
+  repo; add `--skip-node --skip-dsh` to leave the big pieces alone.
 
 ---
 

@@ -208,6 +208,8 @@ i4Tools 的方便之处在于它**走 USB（usbmuxd）转发本地端口**，所
    卸掉它，通道会报 `Connection refused`，**而 i4Tools 的弹窗照样显示「成功」**。
 4. **`ldid`** 和 **`tar`** —— 绝大多数 bootstrap 都自带。`which ldid tar` 查一下。
 
+**手机上要留多少空间：** 实测一套完整安装占用 **423 MB**，其中 71 MB 是 Node 二进制。**按 450 MB 准备。**
+
 **电脑上** —— 只需要一个 SSH 客户端：
 
 | 平台 | 用什么 | 说明 |
@@ -269,7 +271,7 @@ sh install.sh
 3. 把纯 JS 图片编解码器**覆盖**进 `node_modules/sharp`
 4. 装纯 JS ripgrep 替代
 5. 复制三个改过的 DSH 文件
-6. 改写 `pty.node` / `system.node` 的 Mach-O 平台字节并重签名
+6. 改写原生模块（`pty.node`，有 `system.node` 的树也一并）的 Mach-O 平台字节并重签名
 7. 往前端 `index.html` 注入浏览器 polyfill
 
 然后：
@@ -282,12 +284,56 @@ sh scripts/start.sh          # 打印一个 Safari URL
 为什么这么写，见 [`docs/jbroot-namespaces.md`](docs/jbroot-namespaces.md)。
 停止用 `scripts/stop.sh`。
 
-### 参数
+### `start.sh` 参数
 
 ```sh
 sh scripts/start.sh 3081        # 换端口
 DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 ```
+
+### `bootstrap.sh` 其余的开关
+
+`--help` 会列出全部；下面这些是快速开始那张表里没写的：
+
+| 开关 | 含义 |
+|---|---|
+| `--install-dir <目录>` | 装到手机上的哪个目录。默认 `/var/mobile/Documents/dsh-ios`。 |
+| `--dsh-version <版本>` | 固定 `@deepseek-ai/dsh` 的版本，而不是取最新。 |
+| `--node-url <url>` | 从别处下载 Node 构建。 |
+| `--skip-node` / `--skip-dsh` / `--skip-start` | 跳过对应的那一步。 |
+| `--push-only` | 只把仓库推过去就停 —— 不安装、不重启。 |
+
+---
+
+## 出了问题怎么办
+
+**失败可以放心重跑**：`bootstrap.sh` 和 `install.sh` 都是幂等的，而且 `install.sh`
+替换任何一个文件之前都会先留一份 `<文件名>.dsh-ios.bak`。想看计划而不写任何东西，加 `--dry-run`。
+
+脚本的**最后一行通常就是答案** —— 它会说清是什么失败了，而不是默默停下。值得认识的有这几个：
+
+| 你看到的 | 含义 | 怎么办 |
+|---|---|---|
+| `no usable SSH transport found` | `PATH` 上既没有 PuTTY，也没有 `ssh`/`scp`。 | 装 PuTTY，或者用 Git Bash 跑（它自带 `ssh`）。 |
+| `cannot reach mobile@…` | 连不上。上面那段是 **SSH 客户端自己的原话**，并列出四种常见原因。 | 先单独测一次连接：`ssh mobile@127.0.0.1 "echo ok"`（或 `plink` 版）。这一步不通，后面全都不会通。 |
+| `found no SSH server on port 22 in: …` | 它扫过的范围里没有任何东西应答。 | 手机在别的网络（访客 SSID、蜂窝数据）？sshd 在非默认端口（用 `--port`）？局域网比 `/24` 还大？那就自己给地址：`--device mobile@<IP>`。 |
+| `Several hosts answered on port 22` | 有不止一台机器应答，它**不肯替你猜**。 | 从列表里认出手机，明确指定：`--device mobile@<IP>`。 |
+| `checksum mismatch for …` | 下载下来的 Node 和钉死的哈希对不上。 | **别继续。** 重跑一次；还不对就说明来源变了或被篡改 —— `--node-url` 可以换来源。 |
+| `no npm on this machine` | 手机上还没有 DSH 树，而这台电脑上又没有 npm 来构建。 | 在电脑上装 Node.js（自带 npm），或者直接拷一棵树过去 —— [从零开始](docs/install-from-scratch.md)。 |
+| `install.sh failed on the phone` | 适配这一步中断了，**手机上方的输出**会指出在哪一步。 | 重跑。有备份，重跑是安全的；而且第二次往往暴露的是真原因，而不是首次运行的干扰。 |
+| URL 能打开，但页面空白 / 工作区选择器一直跳回默认 | token 或权限模式的问题。 | 完整打开一次带 `?token=…` 的 URL（Safari 会记住 cookie），并把权限模式设为**完全权限**。 |
+| `EADDRINUSE`，或者提示"已启动"但没人应答 | 有个旧进程还占着端口 —— 而这个平台上 `pkill -f` 是不生效的。 | `sh scripts/start.sh` 会按 pidfile 杀掉它，兜底是 `killall -9 node`。`DSH_SAFE=1` 则改成拒绝启动而不是杀。 |
+| 之前好好的，重新越狱后没了 | 安装位于 jbroot 内，而重新越狱会把它换掉。 | 重跑 `bootstrap.sh`。 |
+
+### 回滚，或者重来
+
+* **撤销适配**：`install.sh` 替换过的每个文件旁边都有一份
+  `<文件名>.dsh-ios.bak`（包括那个被改过一个字节的原生模块），拷回去、重启即可。
+* **彻底删掉**：删掉安装目录（默认 `/var/mobile/Documents/dsh-ios`）并停掉服务。
+  安装过程在手机上写下的东西**全在这个目录里** —— DSH 树、装着你会话的 `dsh-home`、
+  以及浏览器 polyfill。
+* **只想重推一次而不重新下载**：`--push-only` 会重推仓库；再加上 `--skip-node --skip-dsh`
+  就不会碰那两个大块。
 
 ---
 
