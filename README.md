@@ -13,10 +13,11 @@ this computer?**
 * **Yes** — carry on. The command below finds the phone and prompts for the
   password; in the common case it is just these three lines.
 * **No** — **read [Install](#install) first.** The phone needs a jailbreak and
-  **OpenSSH** (`openssh-server` from Sileo); Windows needs **PuTTY**, other
-  systems the built-in `ssh`. **The script cannot install any of that** — every
-  SSH route to the phone ends at `sshd` running *on the phone*. Come back once
-  it works.
+  **OpenSSH** (`openssh-server` from Sileo). The computer needs an SSH client:
+  PuTTY if you have it, otherwise the one your system already ships —
+  **nothing to download either way**. **The script cannot install the phone half
+  of that** — every SSH route to the phone ends at `sshd` running *on the phone*.
+  Come back once it works.
 
 **Once that is true, the fastest route: put the phone and the computer on the
 same Wi-Fi, then run these three lines.**
@@ -26,6 +27,12 @@ git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
 ./bootstrap.sh
 ```
+
+> **Too lazy to download PuTTY, or not sure how to use it? Then don't.** If PuTTY
+> is installed the script uses it; if it is not, it falls back to the `ssh` your
+> computer already has — Git Bash brings one, and so does Windows 10/11 — and
+> finds the phone on your Wi-Fi by itself. **Either way there is nothing to
+> install: same Wi-Fi, one command, one password.**
 
 **No IP to look up, no arguments to work out.** The script finds the phone
 itself — first checking whether anything is listening on `127.0.0.1` (a
@@ -55,6 +62,7 @@ For the cases the search cannot cover, or when it fails:
 | `--password <pw>` | The password for the `mobile` account **on the phone** — the one the jailbreak asked you to set (`alpine` if you never did). Omit it and it prompts. |
 | `--dry-run` | Prints what it intends to do and **changes nothing**. |
 | `--key <file>` | Use an SSH private key instead of a password. |
+| `--transport putty\|openssh` | Force which SSH client to use. By default PuTTY is used when it is installed, and the built-in `ssh` when it is not. |
 | `--hostkey <fp>` | Pin the host key (by default it is learned on first contact). |
 
 > **Nothing here requires i4Tools.** `127.0.0.1` is simply one of the things the
@@ -77,9 +85,12 @@ iOS.
 
 **Before the script can work you need, on the phone:** a jailbreak,
 [NewTerm](https://repo.chariz.com/), **`openssh-server`** from Sileo, and
-`ldid` + `tar`. **On the computer:** PuTTY (`plink`+`pscp`) on Windows, or
-`ssh`+`scp` elsewhere. The [Install](#install) section below walks through all
-of it — including why i4Tools reports success even when OpenSSH is missing.
+`ldid` + `tar`. **On the computer:** an SSH client — PuTTY (`plink` + `pscp`) if
+you have it, since that is what the script reaches for first, otherwise the
+`ssh`/`scp` that ship with Git for Windows, WSL, macOS, Linux, and Windows 10/11
+itself. Neither has to be downloaded. The [Install](#install) section below
+walks through all of it — including why i4Tools reports success even when
+OpenSSH is missing.
 
 **Only tested on iPhone 15 / iOS 17.1.1 / Relaxin (rootHide).** See
 [tested scope](#read-this-before-assuming-it-will-work-for-you) before assuming
@@ -202,17 +213,35 @@ rest (`--key`, `--hostkey`, `--install-dir`, `--skip-node`, `--skip-dsh`, …).
 
 | Platform | Use | Notes |
 |---|---|---|
-| **Windows** | **PuTTY** ([download](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html), or just `plink.exe` + `pscp.exe` from *Alternative binary files*) | Preferred: `plink -pw` takes a password directly. Windows' built-in OpenSSH cannot do this non-interactively, and `sshpass` is rarely present. |
+| **Windows, with PuTTY** | `plink.exe` + `pscp.exe` ([download](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html), or from *Alternative binary files*) | **Preferred when present** — the password goes in as an argument, with nothing in between. |
+| **Windows, without PuTTY** | the `ssh`/`scp` that are **already installed** — Git Bash has them, and so does Windows 10/11, in `C:\Windows\System32\OpenSSH` | **Nothing to download.** Git Bash is what runs this script anyway. |
 | Linux / macOS | `ssh` + `scp`, plus `sshpass` if you want to pass a password | Or use an SSH key with `--key`. |
 | WSL | as Linux | |
 
-The script finds `plink`/`pscp` on `PATH`, in the usual install locations, and in
-a `plink/` folder under `%TEMP%`, `%USERPROFILE%`, or `~/Desktop` — which is
-where they end up if you extract the PuTTY zip rather than running the
-installer. If they are somewhere else:
+Either one is fine — PuTTY is used when it is installed, the built-in `ssh` when
+it is not. That order is not a preference, though: behind a transparent (TUN)
+proxy — Clash, Surge, Meta and friends — 20 sequential connections measured
+**plink 20/20** and **OpenSSH 17/20**, the three failures all
+`Connection timed out during banner exchange`, i.e. before authenticating at all.
+Any failed connection is retried twice before the script gives up on it.
+
+How the password reaches `ssh`, which is the only thing that differs:
+it never goes on the command line, and Windows has no `sshpass`, so the script
+writes a tiny `SSH_ASKPASS` helper (in a temporary directory, removed on exit —
+the password itself is passed in the environment, never written to the file) and
+points OpenSSH at it. That needs OpenSSH 8.4 or newer for
+`SSH_ASKPASS_REQUIRE=force`; Git for Windows and Windows 10/11 are both well past
+it. On anything older the script says so, and the password is simply asked for
+once per connection.
+
+PuTTY is looked for on `PATH`, in the usual install locations, and in a `plink/`
+folder under `%TEMP%`, `%USERPROFILE%` or `~/Desktop` — which is where it ends up
+if you extract the PuTTY zip rather than running the installer. To point at it
+explicitly, or to force one of the two:
 
 ```sh
 PLINK=/path/to/plink PSCP=/path/to/pscp ./bootstrap.sh --device ...
+./bootstrap.sh --transport openssh --device ...    # or: --transport putty
 ```
 
 **Reaching the device.** Two options:

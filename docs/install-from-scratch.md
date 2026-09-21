@@ -50,7 +50,9 @@ that way:
 * run a command and read its output directly, instead of transcribing it by hand
 * iterate without switching apps
 
-On Windows the PuTTY suite (`plink` + `pscp`) is enough. i4Tools' channel is the
+On Windows the `ssh`/`scp` you already have (Git Bash, or Windows 10/11's own) are
+enough; the PuTTY suite (`plink` + `pscp`) is equally fine, and the examples below
+write `pscp` because it takes a password in one argument. i4Tools' channel is the
 convenient way to reach the device because it needs no device IP or Wi-Fi — but
 it is a **forwarder, not a server**, so OpenSSH still has to be installed.
 

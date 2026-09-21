@@ -38,6 +38,7 @@ SKIP_START=0
 TRANSPORT=""
 DRY_RUN=0
 WORK=""
+ASKPASS_DIR=""
 
 # ---------------------------------------------------------------------------
 # output
@@ -48,6 +49,20 @@ step() { printf '\n%s== %s%s\n' "$B" "$*" "$R"; }
 note() { printf '%s   %s%s\n' "$D" "$*" "$R"; }
 warn() { printf '   ! %s\n' "$*" >&2; }
 die()  { printf '\nerror: %s\n' "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# cleanup
+#
+# The scratch directory and the askpass helper both have to disappear however
+# the script ends. One trap for both, so that neither can displace the other --
+# a second `trap ... EXIT` would silently replace the first.
+# ---------------------------------------------------------------------------
+cleanup() {
+  if [ -n "$ASKPASS_DIR" ]; then rm -rf "$ASKPASS_DIR" 2>/dev/null || true; fi
+  if [ -n "$WORK" ];        then rm -rf "$WORK"        2>/dev/null || true; fi
+  return 0
+}
+trap cleanup EXIT INT TERM
 
 # ---------------------------------------------------------------------------
 # arguments
@@ -106,17 +121,32 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # ---------------------------------------------------------------------------
 # transport
 #
-# Windows almost always has PuTTY rather than OpenSSH; Linux and macOS the
-# reverse. Rather than require one, detect whichever is present.
+# PuTTY first, when it is installed. Not merely precedence -- measured, and the
+# numbers are why this order matters. On the machine this was written for, which
+# sits behind a transparent (TUN) proxy, 20 sequential connections gave:
+#
+#     plink   20/20
+#     ssh     17/20   (three died in "Connection timed out during banner
+#                      exchange", before authenticating at all)
+#
+# plink also takes the password as an argument (-pw), so there is no helper
+# program and no environment variable in the middle of it. It is frequently
+# installed somewhere off-PATH, so look in the usual places rather than trusting
+# PATH alone.
+#
+# OpenSSH is the fallback, and now a real one rather than an error message: Git
+# Bash has it, Windows 10 and 11 have one in System32\OpenSSH, and Linux and
+# macOS have had one forever -- so nobody has to install PuTTY to use this. The
+# two differ only in how the password is supplied: `ssh` takes none on the
+# command line, so sshpass is used where it exists (Linux, macOS) and the
+# SSH_ASKPASS helper below where it does not (Windows). --transport forces one.
 # ---------------------------------------------------------------------------
 step "transport"
 
 RUN=""; PUT=""; MODE=""
 
-# Windows ships OpenSSH but almost always lacks sshpass, so a password cannot be
-# handed to `ssh` non-interactively. PuTTY's plink takes -pw directly, which is
-# why it is preferred when present. It is frequently installed somewhere
-# off-PATH, so look in the usual places rather than trusting PATH alone.
+# Find a tool on PATH, then at the given paths, then with .exe appended -- the
+# last two matter on Windows, where these binaries are rarely on PATH.
 find_tool() {  # find_tool <name> [candidate paths...]
   _n="$1"; shift
   if command -v "$_n" >/dev/null 2>&1; then command -v "$_n"; return 0; fi
@@ -157,20 +187,29 @@ fi
 
 if [ -z "$MODE" ]; then
   die "no usable SSH transport found.
-   Install PuTTY (plink + pscp, which take a password directly), or OpenSSH, or
-   point at the binaries explicitly:
+   Install OpenSSH (in Git Bash or WSL, or Windows' own: Settings -> System ->
+   Optional features -> OpenSSH Client), or PuTTY, or point at the binaries:
      PLINK=/path/to/plink PSCP=/path/to/pscp $0 ..."
 fi
 
-if [ -n "$PASSWORD" ] && [ "$MODE" = "openssh" ] && ! command -v sshpass >/dev/null 2>&1; then
-  die "only OpenSSH is available, sshpass is not installed, and --password was given.
-   Windows OpenSSH cannot take a password non-interactively. Options:
-     * install PuTTY and use plink/pscp      (recommended on Windows)
-     * use an SSH key                        (--key ~/.ssh/id_ed25519)
-     * install sshpass                       (Linux / macOS / WSL)"
-fi
-
 if [ "$MODE" = "putty" ]; then note "transport: putty ($PLINK_BIN)"; else note "transport: openssh"; fi
+
+# A password with OpenSSH, and no sshpass to feed it in (which is the normal
+# case on Windows -- Git for Windows ships no sshpass, and neither does Windows
+# itself). SSH_ASKPASS_REQUIRE=force arrived in OpenSSH 8.4, and without it ssh
+# ignores the helper while a terminal is attached and asks the person instead,
+# once per connection. Worth a warning rather than an error: it still works,
+# it is just tedious.
+if [ "$MODE" = "openssh" ] && ! command -v sshpass >/dev/null 2>&1; then
+  _ver="$(ssh -V 2>&1 | sed -n 's/^OpenSSH_\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')"
+  _maj="${_ver%% *}"
+  _min="${_ver##* }"
+  if [ -n "$_ver" ] && { [ "$_maj" -lt 8 ] || { [ "$_maj" -eq 8 ] && [ "$_min" -lt 4 ]; }; }; then
+    warn "this OpenSSH ($(ssh -V 2>&1 | cut -d, -f1)) predates SSH_ASKPASS_REQUIRE (8.4):
+     the password will be asked for once per connection. PuTTY (--transport putty)
+     or an SSH key (--key) avoids that."
+  fi
+fi
 
 # Common options per transport.
 #
@@ -189,23 +228,88 @@ ssh_opts() {
   _o=""
   if [ -n "$PORT" ]; then _o="-p $PORT"; fi
   _o="$_o -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
+  # Keepalives, so that a middlebox with a short idle timeout cannot cut a long
+  # step (tar -xf, install.sh) in half and make it look like a failure.
+  _o="$_o -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
   if [ -n "$KEYFILE" ]; then _o="$_o -i $KEYFILE"; fi
   printf '%s' "$_o"
 }
 
+# Run a connection command, and try it twice more if it fails.
+#
+# Not belt-and-braces -- measured. See the transport section above: on the
+# network this was written for, the OpenSSH path dropped 3 of 20 connections in
+# "banner exchange" before authenticating at all (a transparent proxy sits in
+# front of everything here, and the phone's Wi-Fi sleeps). Retried a moment
+# later, the same connection succeeds. A run makes about a dozen connections, so
+# without this the OpenSSH fallback fails most of the time on exactly the network
+# that needs the fallback.
+#
+# Running a remote command twice is safe here: everything this script sends is
+# idempotent. The probes only read; mkdir -p, rm -f and tar -x converge on the
+# same state; install.sh says so at the top of itself, and start.sh replaces
+# whatever is already running.
+retry() {  # retry <command and arguments...>
+  _try=1
+  while [ "$_try" -le 3 ]; do
+    _rc=0
+    "$@" || _rc=$?
+    if [ "$_rc" -eq 0 ]; then return 0; fi
+    if [ "$_try" -eq 3 ]; then return "$_rc"; fi
+    _try=$((_try + 1))
+    warn "the connection dropped; retrying ($_try/3)"
+    sleep 2
+  done
+  return 1
+}
+
 ssh_cmd() {  # ssh_cmd "<remote command>"
-  if [ -n "$PASSWORD" ]; then
-    # shellcheck disable=SC2086
-    sshpass -p "$PASSWORD" ssh $(ssh_opts) "$DEVICE" "$1"
+  # shellcheck disable=SC2086
+  retry auth ssh $(ssh_opts) "$DEVICE" "$1"
+}
+
+# scp_cmd <local> <remote> -- the OpenSSH counterpart of pscp, password included.
+scp_cmd() {
+  # shellcheck disable=SC2086
+  retry auth scp $(ssh_opts) "$@"
+}
+
+# Supply the password to OpenSSH by whichever route this machine has.
+#
+# sshpass is the obvious one and is used when it exists, but there is none on
+# Windows. SSH_ASKPASS is the way round that: it names a program whose stdout is
+# the password. The password is handed over in the environment rather than
+# written into the helper, so it never lands on disk, and the whole directory is
+# removed on exit by the cleanup trap.
+#
+# ssh runs the helper once per connection, and each of those needs the DISPLAY
+# variable to be set, even on Windows where there is no display.
+setup_askpass() {
+  if [ -n "$ASKPASS_DIR" ]; then return 0; fi
+  ASKPASS_DIR="$(mktemp -d)" || die "cannot create a temporary directory for the askpass helper"
+  cat > "$ASKPASS_DIR/askpass.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$DSH_ASKPASS_PASSWORD"
+EOF
+  chmod 700 "$ASKPASS_DIR/askpass.sh"
+  DSH_ASKPASS_PASSWORD="$PASSWORD"
+  SSH_ASKPASS="$ASKPASS_DIR/askpass.sh"
+  DISPLAY=:0
+  export DSH_ASKPASS_PASSWORD SSH_ASKPASS SSH_ASKPASS_REQUIRE=force DISPLAY
+}
+
+auth() {  # auth <command and arguments...>
+  if [ -n "$PASSWORD" ] && command -v sshpass >/dev/null 2>&1; then
+    sshpass -p "$PASSWORD" "$@"
   else
-    # shellcheck disable=SC2086
-    ssh $(ssh_opts) "$DEVICE" "$1"
+    if [ -n "$PASSWORD" ]; then setup_askpass; fi
+    "$@"
   fi
 }
 
 plink_cmd() {  # plink_cmd "<remote command>"
   # shellcheck disable=SC2086
-  "$PLINK_BIN" $(putty_opts) "$DEVICE" "$1"
+  retry "$PLINK_BIN" $(putty_opts) "$DEVICE" "$1"
 }
 
 # Run a command on the device. This goes through the device's own shell, so
@@ -252,10 +356,9 @@ push() {  # push <local> <dirname-under-/rootfs> [newname]
   fi
   if [ "$MODE" = "putty" ]; then
     # shellcheck disable=SC2086
-    "$PSCP_BIN" $(putty_opts) "$_local" "$DEVICE:/rootfs$_dir/$_name"
+    retry "$PSCP_BIN" $(putty_opts) "$_local" "$DEVICE:/rootfs$_dir/$_name"
   else
-    # shellcheck disable=SC2086
-    scp $(ssh_opts) "$_local" "$DEVICE:/rootfs$_dir/$_name"
+    scp_cmd "$_local" "$DEVICE:/rootfs$_dir/$_name"
   fi
 }
 
@@ -288,6 +391,14 @@ if [ -z "$PASSWORD" ] && [ -z "$KEYFILE" ]; then
      --password <pw>    the password the jailbreak asked you to set
                         (OpenSSH's default is alpine if you never set one)
      --key <file>       an SSH private key, if you have set one up"
+fi
+
+# Set the OpenSSH password helper up now, in the main shell, rather than on the
+# first connection. Most of the probes run inside `$( )`, and a subshell's
+# variables never come back -- setting it up lazily there would leave the trap
+# with no directory to remove, and one directory per connection behind it.
+if [ -n "$PASSWORD" ] && [ "$MODE" = "openssh" ] && ! command -v sshpass >/dev/null 2>&1; then
+  setup_askpass
 fi
 
 # ---------------------------------------------------------------------------
@@ -552,7 +663,12 @@ else
 fi
 
 HAS_TAR="$(dev_q 'command -v tar >/dev/null 2>&1 && echo yes || echo no' | tr -d '\r')"
-[ "$HAS_TAR" = "yes" ] || die "no tar on the phone"
+if [ -z "$HAS_TAR" ]; then
+  die "the phone stopped answering (empty reply to the tar check).
+   The connection dropped mid-run; start the script again."
+fi
+[ "$HAS_TAR" = "yes" ] || die "no tar on the phone — it ships with the base jailbreak;
+   install it from Sileo if it is missing."
 
 mutate "mkdir -p '$STAGE'" >/dev/null 2>&1 || true
 
@@ -570,7 +686,6 @@ elif [ "$NODE_OK" != "MISSING" ] && [ -n "$NODE_OK" ]; then
 else
   NODE_BIN="$(basename "$NODE_URL")"
   WORK="$(mktemp -d)"
-  trap 'rm -rf "$WORK"' EXIT INT TERM
 
   say "   fetching $NODE_BIN"
   if command -v curl >/dev/null 2>&1; then curl -fL --retry 3 -o "$WORK/$NODE_BIN" "$NODE_URL"
@@ -621,7 +736,7 @@ else
    Install Node.js on the desktop (which brings npm), or copy a tree over by
    hand — see docs/install-from-scratch.md."
 
-  [ -n "$WORK" ] || { WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT INT TERM; }
+  [ -n "$WORK" ] || WORK="$(mktemp -d)"
 
   say "   npm install @deepseek-ai/dsh${DSH_VERSION:+@$DSH_VERSION}"
   note "this is ~265 MB and takes a while; it is done here because the phone"

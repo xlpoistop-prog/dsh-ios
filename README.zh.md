@@ -11,8 +11,9 @@
 
 * **能** —— 往下走。下面的命令会自动找到手机、提示你输密码，**通常就这三行**。
 * **不能** —— **先看[安装](#安装)那一节**：手机要越狱、装 OpenSSH（Sileo 里的
-  `openssh-server`）；电脑上 Windows 要装 PuTTY，其他系统用自带的 `ssh`。
-  **这些脚本装不了** —— 通往手机的 SSH 通道，末端是手机上的 `sshd`。**连通了再回来。**
+  `openssh-server`）；电脑上要有 SSH 客户端 —— 有 PuTTY 就用 PuTTY，没有就用系统自带的那个，
+  **两种都不用下载**。**脚本装不了手机那一半** —— 通往手机的 SSH 通道，末端是手机上的 `sshd`。
+  **连通了再回来。**
 
 **确认能连之后，最快的用法：让手机和电脑连同一个 Wi-Fi，然后跑这三行。**
 
@@ -21,6 +22,10 @@ git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
 cd dsh-ios
 ./bootstrap.sh
 ```
+
+> **懒得下载 PuTTY，或者不会用？那就不用。** 装了 PuTTY 就用 PuTTY；没装就自动退回
+> **你电脑上本来就有的 `ssh`**（Git Bash 自带一个，Windows 10/11 自己也带一个），
+> 并且在同一个 Wi-Fi 里自动找到手机。**两种都不需要你装任何东西 —— 同一个 Wi-Fi，一条命令，输一次密码。**
 
 **不用查 IP、不用给参数。** 脚本会自己找手机 —— 先看 `127.0.0.1` 上有没有 USB 转发的
 SSH 通道，没有就**扫本网段的 22 端口**（读 SSH banner，不是简单看端口开没开）——
@@ -47,6 +52,7 @@ SSH 通道，没有就**扫本网段的 22 端口**（读 SSH banner，不是简
 | `--password <密码>` | **手机**上 `mobile` 账号的密码 —— **越狱成功时让你设置的那个**。不给就提示输入；没设过的话 OpenSSH 默认是 `alpine`。 |
 | `--dry-run` | 只打印打算做什么，**不改任何东西**。 |
 | `--key <文件>` | 用 SSH 私钥而不是密码。 |
+| `--transport putty\|openssh` | 强制用哪个 SSH 客户端。默认装了 PuTTY 就用 PuTTY，没装就用自带的 `ssh`。 |
 | `--hostkey <指纹>` | 固定主机密钥（默认首次连接时自动学习）。 |
 
 > **脚本不依赖 i4Tools。** `127.0.0.1` 只是它探测的其中一种情况，
@@ -65,7 +71,8 @@ SSH 通道，没有就**扫本网段的 22 端口**（读 SSH banner，不是简
 
 **脚本要能跑通，手机上需要：** 越狱、[NewTerm](https://repo.chariz.com/)、
 Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
-**电脑上需要：** Windows 上 PuTTY（`plink`+`pscp`），其他系统 `ssh`+`scp`。
+**电脑上需要：** 一个 SSH 客户端 —— **有 PuTTY（`plink`+`pscp`）就优先用它**，
+没有就用 Git for Windows、WSL、macOS、Linux、Windows 10/11 自带的 `ssh`+`scp`。**两种都不用下载。**
 下面的[安装](#安装)章节有完整步骤 —— 包括**为什么 i4Tools 在没装 OpenSSH 时也报「成功」**。
 
 **只在 iPhone 15 / iOS 17.1.1 / Relaxin（rootHide）上测过。**
@@ -175,16 +182,31 @@ i4Tools 的方便之处在于它**走 USB（usbmuxd）转发本地端口**，所
 
 | 平台 | 用什么 | 说明 |
 |---|---|---|
-| **Windows** | **PuTTY**（[下载](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html)，或在 *Alternative binary files* 里单独拿 `plink.exe` + `pscp.exe`） | **推荐**：`plink -pw` 可以直接接密码。Windows 自带的 OpenSSH **做不到非交互传密码**，而 `sshpass` 基本没有。 |
+| **Windows，装了 PuTTY** | `plink.exe` + `pscp.exe`（[下载](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html)，或从 *Alternative binary files* 单独拿） | **有就优先用它** —— 密码当参数直接传进去，中间不隔任何东西。 |
+| **Windows，没装 PuTTY** | **本来就装好的 `ssh`/`scp`** —— Git Bash 自带，Windows 10/11 自己在 `C:\Windows\System32\OpenSSH` 里也有 | **什么都不用下载。** 而且跑这个脚本用的就是 Git Bash。 |
 | Linux / macOS | `ssh` + `scp`，要传密码再装 `sshpass` | 或者用密钥：`--key` |
 | WSL | 同 Linux | |
 
+两种都行 —— **装了 PuTTY 就用 PuTTY，没装就用自带的 `ssh`**。这个顺序不是偏好，是实测：
+在**透明（TUN）代理**后面（Clash、Surge、Meta 这类），连续 20 次连接的结果是
+**plink 20/20**、**OpenSSH 17/20** —— 那 3 次全是
+`Connection timed out during banner exchange`，也就是**还没开始认证就断了**。
+任何一次连接失败，脚本都会自动重试两次再报错。
+
+唯一的区别是密码怎么交进去：
+**它永远不出现在命令行上**，而 Windows 又没有 `sshpass`，所以脚本会写一个极小的
+`SSH_ASKPASS` 助手（放在临时目录里、退出时删除 —— **密码本身走环境变量，不落盘**），
+然后让 OpenSSH 去调它。这需要 OpenSSH 8.4 以上的 `SSH_ASKPASS_REQUIRE=force`；
+Git for Windows 和 Windows 10/11 都远在这之上。更老的 `ssh` 上脚本会明确告诉你，
+代价只是**每连一次问一次密码**。
+
 脚本会在 `PATH`、常见安装位置、以及 `%TEMP%` / `%USERPROFILE%` / `~/Desktop`
-下的 `plink/` 目录里找 —— **解压版 PuTTY（而不是跑安装程序）通常就落在这些地方**。
-装在别处就：
+下的 `plink/` 目录里找 PuTTY —— **解压版 PuTTY（而不是跑安装程序）通常就落在这些地方**。
+想直接指定路径、或者强制用某一种：
 
 ```sh
 PLINK=/path/to/plink PSCP=/path/to/pscp ./bootstrap.sh --device ...
+./bootstrap.sh --transport openssh --device ...    # 或者 --transport putty
 ```
 
 **怎么连到手机**，两条路：

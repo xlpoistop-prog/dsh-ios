@@ -19,6 +19,12 @@
 
 set -eu
 
+# The device's coreutils are localised -- a `cp` failure here came back in
+# Chinese, which is hard to match against this script. Error text is what ends
+# up in bug reports, so pin it to one language.
+LC_ALL=C
+export LC_ALL
+
 # ---------------------------------------------------------------------------
 # arguments
 # ---------------------------------------------------------------------------
@@ -60,7 +66,15 @@ step "preflight"
 
 [ "$(uname -s)" = "Darwin" ] || die "this installer is for iOS/Darwin"
 
-command -v node >/dev/null 2>&1 || die "node not found on PATH"
+# A non-interactive SSH session gets /usr/bin:/bin:/usr/sbin:/sbin from sshd and
+# nothing else, and on a jailbroken device node is normally not installed
+# system-wide -- it sits next to this script. Accept it from either place, so
+# that `ssh phone 'cd ... && sh install.sh'` works as well as typing it in a
+# terminal whose profile already put it on PATH.
+if ! command -v node >/dev/null 2>&1 && [ -x "$HERE/node" ]; then
+  PATH="$HERE:$PATH"; export PATH
+fi
+command -v node >/dev/null 2>&1 || die "node not found on PATH, and no ./node next to $0"
 NODE_BIN="$(command -v node)"
 NODE_VERSION="$(node --version 2>/dev/null || echo unknown)"
 say "   node      $NODE_BIN ($NODE_VERSION)"
@@ -112,21 +126,26 @@ BACKUP_SUFFIX="dsh-ios.bak"
 
 # Back up once; never overwrite an existing backup with a newer modified file,
 # or a second run would destroy the pristine copy.
+#
+# These variables are named per function on purpose. POSIX sh has no `local`
+# here, so every assignment is global: a plain `src` in backup() overwrote the
+# caller's `src`, and install_file then copied the destination onto itself --
+# "cp: 'X' and 'X' are the same file", which is how this was found.
 backup() {
-  src="$1"
-  [ -e "$src" ] || return 0
-  [ -e "$src.$BACKUP_SUFFIX" ] && { say "   backup exists: $(basename "$src")"; return 0; }
-  run cp -p "$src" "$src.$BACKUP_SUFFIX"
-  say "   backed up  $(basename "$src")"
+  _bak_src="$1"
+  [ -e "$_bak_src" ] || return 0
+  [ -e "$_bak_src.$BACKUP_SUFFIX" ] && { say "   backup exists: $(basename "$_bak_src")"; return 0; }
+  run cp -p "$_bak_src" "$_bak_src.$BACKUP_SUFFIX"
+  say "   backed up  $(basename "$_bak_src")"
 }
 
 install_file() {
-  src="$1"; dst="$2"
-  [ -f "$src" ] || { say "   MISSING SOURCE: $src"; return 1; }
-  run mkdir -p "$(dirname "$dst")"
-  backup "$dst"
-  run cp -p "$src" "$dst"
-  say "   installed  $dst"
+  _ins_src="$1"; _ins_dst="$2"
+  [ -f "$_ins_src" ] || { say "   MISSING SOURCE: $_ins_src"; return 1; }
+  run mkdir -p "$(dirname "$_ins_dst")"
+  backup "$_ins_dst"
+  run cp -p "$_ins_src" "$_ins_dst"
+  say "   installed  $_ins_dst"
 }
 
 # ---------------------------------------------------------------------------
@@ -195,20 +214,20 @@ step "6/7  native addon platform byte  (node-pty, node-addon-system)"
 # dyld refuses these with \"have 'macOS', need 'iOS'\" because of the
 # LC_BUILD_VERSION platform field. One byte, in place, then re-sign.
 patch_macho() {
-  target="$1"
-  [ -f "$target" ] || { say "   not present: $target"; return 0; }
+  _pm_target="$1"
+  [ -f "$_pm_target" ] || { say "   not present: $_pm_target"; return 0; }
 
   if [ "$DRY_RUN" = "1" ]; then
-    say "   [dry-run] patch + sign $target"
+    say "   [dry-run] patch + sign $_pm_target"
     return 0
   fi
 
-  "$NODE_BIN" "$HERE/tools/patch-macho-ios.mjs" "$target" || {
-    say "   patch failed: $target"; return 1; }
+  "$NODE_BIN" "$HERE/tools/patch-macho-ios.mjs" "$_pm_target" || {
+    say "   patch failed: $_pm_target"; return 1; }
 
   if [ "$HAVE_LDID" = "1" ]; then
-    ldid -S "$target" 2>/dev/null || ldid -S"$HERE/scripts/entitlements.plist" "$target" 2>/dev/null \
-      || say "   warning: ldid failed on $target"
+    ldid -S "$_pm_target" 2>/dev/null || ldid -S"$HERE/scripts/entitlements.plist" "$_pm_target" 2>/dev/null \
+      || say "   warning: ldid failed on $_pm_target"
   fi
 }
 patch_macho "$NM/node-pty/prebuilds/darwin-arm64/pty.node"
