@@ -13,19 +13,46 @@ why that distinction matters and will bite you repeatedly otherwise.
 
 ## 0. Before you start
 
-You need:
+### Tested scope
 
-* a **jailbroken** device (this was built against Relaxin / rootHide on
-  iOS 17.1.1, but the approach is not specific to it — anything that gives you a
-  shell and `ldid` should work)
-* **`ldid`** on the device — required to re-sign the two patched native addons.
-  Almost every bootstrap ships it; check with `which ldid`.
-* **`tar`** on the device. Note there is typically **no `gzip`** — see the
+Verified against **one configuration only**: iPhone 15 (A16), **iOS 17.1.1**,
+Relaxin (rootHide), Node 22.19.0. **No other iOS version, device or jailbreak has
+been tried.** The constraints below are platform properties rather than
+version-specific quirks, so the approach should transfer — but that is reasoning,
+not evidence. Expect to re-derive details on anything else, and note that a
+**rootless** jailbreak (Dopamine and relatives) does not have the jbroot split
+described in [`jbroot-namespaces.md`](jbroot-namespaces.md) in the same form.
+
+### What you need
+
+* a **jailbroken** device, with **`ldid`** — required to re-sign the two patched
+  native addons. Almost every bootstrap ships it; check with `which ldid`.
+* **`tar`** on the device. There is typically **no `gzip`** — see the
   decompression recipe below.
-* an SSH connection from a desktop. On Windows, `plink`/`pscp` from the PuTTY
-  suite are enough; there is no need for a full OpenSSH install.
+* **A terminal on the device.** [NewTerm](https://repo.chariz.com/) is what this
+  was built with. Any POSIX shell should do; the scripts assume nothing beyond
+  `sh`.
 
 Nothing else. **No Mac, no Xcode, no cross-compiler.**
+
+### Strongly recommended: SSH from a desktop
+
+Not required — everything here runs from NewTerm. But it is the difference
+between minutes and hours when something goes wrong, and this port was debugged
+that way:
+
+* copy files with `pscp`/`scp` instead of typing them out
+* run a command and read its output directly, instead of transcribing it by hand
+* iterate without switching apps
+
+On Windows the PuTTY suite (`plink` + `pscp`) is enough, and **i4Tools' SSH
+channel needs no OpenSSH on the device** — it tunnels over usbmuxd. That matters
+here: it means SSH is available even before you have installed anything.
+
+> Note for later: on some networks `github.com` is blocked at the TLS layer
+> while `api.github.com` and `ssh.github.com` work. If `git push` over HTTPS
+> fails with a reset connection despite TCP connecting, try
+> `ssh.github.com:443` — see the SSH config note at the end of this file.
 
 ---
 
@@ -163,9 +190,14 @@ It prints a URL of the form `http://127.0.0.1:3080/?token=…`. **Open that in
 Safari on the device.** It is loopback-only by design; there is no remote
 exposure.
 
-The token changes on every start, so use the freshly printed URL rather than a
-bookmark. The URL is also written to `/var/mobile/Documents/dsh-url.txt` so the
-Files app can reach it.
+**You only need the token once.** Safari stores the cookie the URL sets, so
+after opening the full URL a single time, plain `127.0.0.1:3080` works from then
+on. This is worth knowing because the token changes on every launch and is long
+enough to be annoying to retype — and it is also why an old bookmark can look
+like "the server is down" when the server is fine.
+
+The URL is also written to `/var/mobile/Documents/dsh-url.txt` so the Files app
+can reach it.
 
 Inside the UI, set the permission mode to full access on first use —
 `workspace-write` cannot start command-backed work here, because the sandbox
@@ -204,3 +236,59 @@ server log with the `tools/diag-overlay.js` banner installed — see
 **Everything is slow.** Expected. `--jitless` interprets; there is no
 optimising compiler. Prefer starting a fresh session over continuing a very long
 one, and expect the first seconds after launch to be busy.
+
+---
+
+## Appendix: pushing to GitHub from a network that blocks it
+
+Encountered while publishing this repo, and worth writing down because the
+symptom is misleading.
+
+On some networks `github.com` is blocked at the **TLS** layer while everything
+else on the same host works. The tell:
+
+```sh
+# TCP connects fine …
+Test-NetConnection github.com -Port 443        # → True
+
+# … but git cannot get through
+git push
+# fatal: unable to access 'https://github.com/…': Recv failure: Connection was reset
+```
+
+Meanwhile `api.github.com` and `raw.githubusercontent.com` answer normally. So
+the block is selective and specific to that hostname, not a general outage — and
+intermittent, which is why the first push may have succeeded.
+
+**Workaround: SSH over port 443.** GitHub serves SSH on `ssh.github.com:443`,
+which was reachable when plain HTTPS was not. Register a key, then point
+`github.com` at it:
+
+```
+# ~/.ssh/config
+Host github.com
+  HostName ssh.github.com
+  Port 443
+  User git
+  IdentityFile ~/.ssh/github_ed25519
+  IdentitiesOnly yes
+```
+
+```sh
+git remote set-url origin git@github.com:<user>/<repo>.git
+ssh -T git@github.com     # expect: "Hi <user>! You've successfully authenticated…"
+git push
+```
+
+`does not provide shell access` in that message is normal — GitHub's SSH is for
+git only.
+
+Two things to get right on the GitHub side, both easy to trip over: the **title**
+field takes a label like `dsh-ios desktop`, and the **key** field takes the whole
+`.pub` line including the trailing comment. Pasting them the wrong way round is
+survivable — the page will tell you the key is invalid — but pasting a
+*truncated* key is not, so copy the entire line.
+
+A working proxy also fixes this, of course. The SSH route is worth knowing
+because it does not require one.
+

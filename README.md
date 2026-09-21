@@ -38,6 +38,50 @@ Served from `127.0.0.1:3080`, loopback only. On desktop DSH opens a browser for
 you; here `--no-open` is passed and the URL printed, with a fresh token each
 launch.
 
+### Read this before assuming it will work for you
+
+Developed and verified against **exactly one configuration**. Nothing else has
+been tried:
+
+| | |
+|---|---|
+| Device | iPhone 15 (A16) |
+| iOS | **17.1.1 — and nothing else** |
+| Jailbreak | Relaxin (rootHide) |
+| Node | 22.19.0 (`iphoneos-arm64`) |
+
+The mechanisms this port depends on — the jbroot namespace split, the `mmap`
+restriction on native modules, `--jitless` behaviour, the absent `gzip` — are
+properties of the platform rather than of one iOS release, so the approach
+should carry over. **But that is reasoning, not evidence.** On a different iOS
+version, device or jailbreak, expect to re-derive the details. Treat
+[`docs/ios-constraints.md`](docs/ios-constraints.md) as a checklist of things to
+verify, not a guarantee that they hold.
+
+In particular, a **rootless** jailbreak (Dopamine and relatives) will not have
+the jbroot split described here in the same form — the namespace section is
+specific to rootHide's layout.
+
+### Practical notes
+
+**A terminal on the device is required.** [NewTerm](https://repo.chariz.com/) is
+what this was built and used with. Any POSIX shell should do; the scripts assume
+nothing beyond `sh`.
+
+**SSH from a computer is not required, but it is the single biggest time saver.**
+Everything works from NewTerm alone. What SSH changes is how fast you can debug:
+copy files with `pscp`/`scp` instead of retyping, run commands and read their
+output directly instead of transcribing by hand, and iterate without switching
+apps. This port was debugged over SSH, and the difference is not marginal. On
+Windows, i4Tools' SSH channel is enough and needs **no OpenSSH on the device** —
+it tunnels over usbmuxd.
+
+**The token is only needed once.** Safari keeps the cookie that
+`?token=…` sets, so after opening the full URL a single time, plain
+`127.0.0.1:3080` works from then on. Worth knowing, because the token changes on
+every launch and is long enough to be genuinely annoying to retype — and it is
+also why a stale bookmark can look like "the server is down".
+
 ---
 
 ## Why this port is different
