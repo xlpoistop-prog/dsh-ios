@@ -51,10 +51,18 @@ SSH servers (by reading their banners, not by testing whether the port is open) 
 **and then asks for the password**, the one the jailbreak asked you to set
 (`alpine` if you never set one).
 
-> If you would rather look before leaping, add `--dry-run` to the last line. It
-> prints what it intends to do and **changes nothing** — but it still contacts the
-> phone and still asks for the password, because the plan is built from what is
-> already installed there. Everything it runs on the phone is read-only.
+**To look before leaping, run this one instead** — it only looks:
+
+```sh
+git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
+cd dsh-ios
+./bootstrap.sh --dry-run
+```
+
+It prints what it intends to do and **changes nothing** — but it still contacts the
+phone and still asks for the password, because the plan is built from what is
+already installed there. Everything it runs on the phone is read-only. Happy with
+the plan? Run the same thing without `--dry-run`.
 
 **What the search actually covers**, since it can only find the phone if it is
 somewhere it looked:
