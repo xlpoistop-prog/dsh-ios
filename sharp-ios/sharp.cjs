@@ -46,6 +46,89 @@ function detectFormat(buf) {
   return undefined;
 }
 
+/* Native fast path, ON by default; set DSH_NATIVE_CODEC=0 to fall back to pure JS.
+   Compiled on-device; returns null whenever the addon is missing, unloadable,
+   or the env flag is off, so the pure-JS decoder stays the default and the
+   fallback. PNG is lossless, so its native output is byte-identical to the JS
+   decoder. JPEG comes from a different decoder and therefore differs by JPEG's
+   normal rounding (measured: max +/-2 per channel, 0.8% of pixels); EXIF
+   orientation is carried over from the JS header scan. */
+let _nativeCodec;
+function nativePng(buf) {
+  if (process.env.DSH_NATIVE_CODEC === '0') return null;
+  if (_nativeCodec === undefined) {
+    try { _nativeCodec = require('./imgaddon.node'); }
+    catch (e) { _nativeCodec = null; }
+  }
+  if (!_nativeCodec) return null;
+  try {
+    const r = _nativeCodec.decode(buf);
+    if (!r || !r.data) return null;
+    return {
+      rgba: r.data,
+      width: r.width,
+      height: r.height,
+      hasAlpha: r.sourceChannels === 4 || r.sourceChannels === 2,
+      metadata: { format: 'png' },
+    };
+  } catch (e) { return null; }
+}
+
+/* JPEG counterpart of nativePng. stb_image does not read EXIF, so orientation is
+   taken from the pure-JS header scan (cheap: it does not decode pixels) and
+   carried through; the pixels themselves come from the native decoder. */
+function nativeJpeg(buf) {
+  if (process.env.DSH_NATIVE_CODEC === '0') return null;
+  if (_nativeCodec === undefined) {
+    try { _nativeCodec = require('./imgaddon.node'); }
+    catch (e) { _nativeCodec = null; }
+  }
+  if (!_nativeCodec) return null;
+  try {
+    const r = _nativeCodec.decode(buf);
+    if (!r || !r.data) return null;
+    let orientation;
+    try { const md = jpeg.jpegMetadata(buf); orientation = md && md.orientation; } catch (e) {}
+    return {
+      rgba: r.data, width: r.width, height: r.height, hasAlpha: false,
+      metadata: { format: 'jpeg', orientation: orientation },
+    };
+  } catch (e) { return null; }
+}
+
+/* Native resize, same switch as the decoders. Returns null whenever the addon is
+   unavailable so the pure-JS resampler stays the fallback. The addon mirrors
+   resize.cjs exactly (verified byte-identical), so this cannot change the image. */
+function nativeResize(buf, w, h, dw, dh, ch) {
+  if (process.env.DSH_NATIVE_CODEC === '0') return null;
+  if (_nativeCodec === undefined) {
+    try { _nativeCodec = require('./imgaddon.node'); }
+    catch (e) { _nativeCodec = null; }
+  }
+  if (!_nativeCodec || typeof _nativeCodec.resize !== 'function') return null;
+  try {
+    const r = _nativeCodec.resize(Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength), w, h, dw, dh, ch);
+    return r ? new Uint8Array(r.buffer, r.byteOffset, r.byteLength) : null;
+  } catch (e) { return null; }
+}
+
+/* Native PNG encoder. Two guards: the switch, and any explicit format options
+   (stb would silently ignore compression level etc., so those use the JS path).
+   Returns the addon's Buffer unchanged: downstream code calls Buffer methods. */
+function nativeEncodePng(buf, w, h, hasAlpha, fmtOptions) {
+  if (process.env.DSH_NATIVE_CODEC === '0') return null;
+  if (fmtOptions && Object.keys(fmtOptions).length) return null;
+  if (_nativeCodec === undefined) {
+    try { _nativeCodec = require('./imgaddon.node'); }
+    catch (e) { _nativeCodec = null; }
+  }
+  if (!_nativeCodec || typeof _nativeCodec.encodePng !== 'function') return null;
+  try {
+    return _nativeCodec.encodePng(Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength),
+                                  w, h, 4, hasAlpha ? 4 : 3) || null;
+  } catch (e) { return null; }
+}
+
 function headerOnlyMetadata(buf, format) {
   if (format === 'gif') {
     const width = buf[6] | (buf[7] << 8);
@@ -190,11 +273,17 @@ class Sharp {
 
   _decode() {
     const format = detectFormat(this._buf);
-    if (format === 'png') return png.decodePNG(this._buf);
+    if (format === 'png') {
+      const nat = nativePng(this._buf);
+      if (nat) return nat;
+      return png.decodePNG(this._buf);
+    }
     if (format === 'jpeg') {
       if (typeof jpeg.decodeJPEG !== 'function') {
         throw new Error('sharp(ios-js): JPEG decoding is not available in this build');
       }
+      const nat = nativeJpeg(this._buf);
+      if (nat) return nat;
       return jpeg.decodeJPEG(this._buf);
     }
     if (format === 'webp') throw new Error('sharp(ios-js): WebP decoding is not implemented; convert the image to PNG or JPEG');
@@ -236,7 +325,7 @@ class Sharp {
       } else if (op.t === 'resize') {
         const t = computeTarget(width, height, op.o);
         if (t.dw !== width || t.dh !== height) {
-          rgba = resample(rgba, width, height, 4, t.dw, t.dh);
+          rgba = nativeResize(rgba, width, height, t.dw, t.dh, 4) || resample(rgba, width, height, 4, t.dw, t.dh);
           width = t.dw; height = t.dh;
         }
         if (t.crop) {
@@ -304,7 +393,7 @@ class Sharp {
       });
       hasAlpha = false;
     } else if (outFormat === 'png') {
-      data = png.encodePNG(rgba, width, height, hasAlpha, fmtOptions);
+      data = nativeEncodePng(rgba, width, height, hasAlpha, fmtOptions) || png.encodePNG(rgba, width, height, hasAlpha, fmtOptions);
     } else if (outFormat === 'webp') {
       throw new Error('sharp(ios-js): WebP encoding is not implemented in the pure-JS iOS build; ' +
         'PNG and JPEG are supported. Re-encode the source without an alpha channel or convert it to PNG/JPEG first.');

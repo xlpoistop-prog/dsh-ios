@@ -341,13 +341,13 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 
 **已经存在另一个 iOS 移植，而且做得很扎实**：它交叉编译 Node 并打了 V8 补丁，**完整 JIT 可用**，原生编译了 `node-pty`，还交付规范的 `.deb` 包。**如果你有 Mac 和 CI，就用那个** —— 它更快、更完整。
 
-这个移植做的是**相反**的取舍：拿一个**现成的** iOS Node 构建，**在运行时适配**。所以整个移植就是一组 JS 垫片、**一处字节级二进制补丁**、以及**三处对 DSH 的小改动**。**任何人拿一台越狱手机 + 一条 SSH 就能复现 —— 零编译工具链。**
+这个移植做的是**相反**的取舍：拿一个**现成的** iOS Node 构建，**在运行时适配**。所以整个移植就是一组 JS 垫片、**一处字节级二进制补丁**、以及**三处对 DSH 的小改动**。**任何人拿一台越狱手机 + 一条 SSH 就能复现 —— 电脑上不需要任何编译工具链**（后面那个可选的图片加速用的是**手机自带的** `clang`，同样不涉及 Mac）。
 
 这个约束就是全部设计：
 
 | | 本项目 | 交叉编译移植 |
 |---|---|---|
-| 编译工具链 | **无** | macOS + Xcode（+ CI） |
+| 编译工具链 | 安装本身**不需要**；原生图片加速用**手机上的**编译器（越狱自带的 `clang`），**从不需要 Mac** | macOS + Xcode（+ CI） |
 | JIT | 无（`--jitless`） | **有** |
 | Node | 现成 `iphoneos-arm64` 构建 | 自建 + V8 W^X 补丁 |
 | `node-pty` | macOS prebuild，改一个字节 | 为 iOS 编译 |
@@ -369,7 +369,7 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 | `bash` —— 真实命令执行 | ✅ |
 | `read` / `write` / `edit` | ✅ |
 | `glob` / `grep` | ✅ 纯 JS ripgrep，**进程内调用** |
-| **图片附件 —— 上传与读取** | ✅ **纯 JS `sharp` 后端** |
+| **图片附件 —— 上传与读取** | ✅ **`sharp` 替代实现：纯 JS 为主 + 可选原生加速（解码/缩放/PNG 编码 快 45~80 倍）** |
 | 会话持久化（`jsonl.zstd`） | ✅ |
 | 子 agent、workflow、goal、todo、web 搜索 | ✅ |
 
@@ -452,7 +452,7 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 **两个都需要。** 注意 shim 是用 `Object.defineProperty` 安装的，不是赋值 ——
 `globalThis.fetch = …` 会触发 Node 的懒加载 getter，进而加载 undici，那就是崩溃点。
 
-### 图片：纯 JS 的 `sharp`
+### 图片：`sharp` 的替代 —— 纯 JS 为主，外加可选的原生加速
 
 iOS 上没有 libvips，`sharp` 无从谈起。`sharp-ios/` 是从零实现 DSH 用到的那部分：
 
@@ -481,6 +481,28 @@ module.exports = require('./ios/sharp.cjs');
 **为什么「颜色」是关键证据**：早先的权宜做法是让 agent 手工解码 PNG 再渲染成字符点阵。
 那个方式能表达形状，**但完全无法承载颜色**。当模型正确报出颜色时，同时证明了两件事：
 **像素是真的被解码了**，而且**它们是以图像形式送到模型的，不是文本**。
+
+**然后发现瓶颈在解释器。**`--jitless` 下什么都不会被编译，所以一张 1254×1254 的截图
+要花掉约 **21 秒**才能解码、缩放、重新编码。`sharp-ios/native/` 是一个约 180 行的 C 插件，
+专门接管这三步 —— 而且它**是在手机上编译的**，用的是越狱自带的 clang，**全程没有 Mac**：
+
+| 步骤 | 纯 JS | native | |
+|---|---|---|---|
+| 解码 | 2,910 ms | **65 ms** | 44.8× |
+| 缩放 | 6,921 ms | **86 ms** | 80.5× |
+| PNG 编码 | 11,298 ms | **262 ms** | 43.1× |
+
+难点从来不是速度，而是**正确性**：
+
+* C 版重采样是 **`resize.cjs` 的逐位移植** —— 换任何别的核都会让边缘移位，
+  stb 自带的滤波器就是因此被否决的；
+* PNG 解码与 JS **逐字节一致**；JPEG 解码只差 JPEG 自身的舍入（实测**最大 ±2/255，0.8% 像素**）；
+* native 的 PNG 输出**比 JS 大**（像素相同、压缩更差，测试图 +34%）。这是唯一的真实代价。
+
+**它是优化，不是依赖。**只要插件缺失、没签名、加载失败、或者你设了
+`DSH_NATIVE_CODEC=0`，`sharp.cjs` 就自动回退纯 JS —— 也就是说，**没有编译器的设备
+只是走得慢一点**。细节（包括构建它时踩的两个平台坑：`TMPDIR`、以及解包头文件时没有 `gzip`）
+见 [`sharp-ios/native/README.md`](sharp-ios/native/README.md)。
 
 ### 没有 ripgrep 的 `glob` / `grep`
 
@@ -516,7 +538,7 @@ glob 用 `--files`，grep 用 `--json`（ripgrep 公开的 JSON schema）——
 
 ```
 install.sh                  幂等安装器
-sharp-ios/                  纯 JS 图片编解码器（5 文件 + 文档）
+sharp-ios/                  图片编解码：纯 JS 实现，外加可选的原生加速（native/）
 rg-ios/                     纯 JS ripgrep 替代
 preload/                    运行时垫片：WebAssembly、fetch、浏览器 polyfill
 shims/                      原生模块替身：koffi、win32-process、flock

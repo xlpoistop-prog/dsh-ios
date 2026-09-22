@@ -404,14 +404,15 @@ CI pipeline, **use that one** — it is faster and more complete.
 This port makes the opposite trade. It takes a **stock** iOS Node build and
 adapts at runtime, so the entire port is a set of JavaScript shims, one
 byte-level binary patch, and three small edits to DSH itself. **Anyone can
-reproduce it with a jailbroken phone and an SSH connection** — no build
-toolchain of any kind.
+reproduce it with a jailbroken phone and an SSH connection** — no build toolchain
+on your computer at all. The one piece of native code, the optional image
+accelerator, is compiled by the `clang` that is already *on the phone*.
 
 That constraint is the whole design:
 
 | | This port | Cross-compiled port |
 |---|---|---|
-| Build toolchain | **none** | macOS + Xcode (+ CI) |
+| Build toolchain | **none** for the install — and for the native accelerator, a compiler *on the phone* (`clang` from the jailbreak), never a Mac | macOS + Xcode (+ CI) |
 | JIT | no (`--jitless`) | **yes** |
 | Node | stock `iphoneos-arm64` build | custom build, V8 W^X patch |
 | `node-pty` | macOS prebuild, one byte rewritten | compiled for iOS |
@@ -433,7 +434,7 @@ them are in [`docs/ios-constraints.md`](docs/ios-constraints.md).
 | `bash` — real command execution | ✅ |
 | `read` / `write` / `edit` | ✅ |
 | `glob` / `grep` | ✅ pure-JS ripgrep, called in-process |
-| **Image attachments — upload and read** | ✅ **pure-JS `sharp` backend** |
+| **Image attachments — upload and read** | ✅ **`sharp` replacement: pure JS, plus an optional native accelerator (45–80× on decode/resize/PNG encode)** |
 | Session persistence (`jsonl.zstd`) | ✅ |
 | Subagents, workflows, goals, todos, web search | ✅ |
 
@@ -519,7 +520,7 @@ Both are needed. Note the shim installs via `Object.defineProperty`, not
 assignment — `globalThis.fetch = …` triggers Node's lazy getter, which loads
 undici, which is the crash.
 
-### Images: a pure-JS `sharp`
+### Images: a `sharp` replacement — pure JS, with an optional native fast path
 
 There is no iOS libvips, so `sharp` cannot work. `sharp-ios/` is a from-scratch
 replacement for the subset DSH uses:
@@ -546,6 +547,34 @@ Verified by blind test: an image with randomly generated content was read back
 correctly — the exact string, the shape, and both colours. Colour reporting
 matters as evidence here, because a text-based representation cannot carry
 colour, so the model must have received the actual image.
+
+**Then the interpreter turned out to be the bottleneck.** Under `--jitless`
+nothing is ever compiled, so a 1254×1254 screenshot took about 21 seconds to
+decode, resize and re-encode. `sharp-ios/native/` is a ~180-line C addon that
+takes over exactly those three steps — and it is **compiled on the phone**, by
+the jailbreak's own clang, with no Mac involved:
+
+| Step | pure JS | native | |
+|---|---|---|---|
+| decode | 2,910 ms | **65 ms** | 44.8× |
+| resize | 6,921 ms | **86 ms** | 80.5× |
+| PNG encode | 11,298 ms | **262 ms** | 43.1× |
+
+Correctness was the whole problem, not speed:
+
+* the C resampler is a **bit-exact port of `resize.cjs`**, because any other
+  kernel shifts edges — stb's own filters were tried and rejected for that reason;
+* PNG decode is byte-identical, and JPEG decode differs only by JPEG's own
+  rounding (measured: max ±2 per channel, 0.8% of pixels);
+* native PNG output is **larger** than the JS encoder's — same pixels, worse
+  compression (+34% on the test image). That is the one real cost.
+
+It is an optimisation, never a dependency. `sharp.cjs` falls back to pure JS
+whenever the addon is missing, unsigned, unloadable, or disabled with
+`DSH_NATIVE_CODEC=0` — so a device without a compiler is simply a device that
+runs the slower path. Details, including the two platform traps in building it
+(`TMPDIR`, and no `gzip` to unpack the headers), are in
+[`sharp-ios/native/README.md`](sharp-ios/native/README.md).
 
 ### `glob` / `grep` without ripgrep
 
@@ -586,7 +615,8 @@ Two consequences worth repeating up front:
 
 ```
 install.sh                  idempotent installer
-sharp-ios/                  pure-JS image codec  (5 files + docs)
+sharp-ios/                  image codec: pure-JS implementation, plus an
+                            optional native accelerator (native/)
 rg-ios/                     pure-JS ripgrep replacement
 preload/                    runtime shims: WebAssembly, fetch, browser polyfills
 shims/                      native-module stand-ins: koffi, win32-process, flock

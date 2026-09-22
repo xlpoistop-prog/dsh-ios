@@ -16,15 +16,23 @@
 
 import { createRequire } from 'node:module'
 import { readFileSync, existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
 // Prefer an explicitly supplied codec, else the one installed in the DSH tree.
+//
+// resolve() rather than join(), and that is not cosmetic: this path is checked
+// with existsSync, which resolves against the current directory, and then
+// required, which resolves a relative path against *this file*. Only an absolute
+// path satisfies both. It also has to be a path Node can see — on the device the
+// useful argument is relative to the install directory, e.g.
+//   ../dsh/node_modules/sharp/dist/ios
+// because Node resolves /var/mobile against the real root, not jbroot.
 const candidate = process.argv[2]
-  ? join(process.argv[2], 'sharp.cjs')
-  : join(HERE, '..', 'sharp-ios', 'sharp.cjs')
+  ? resolve(process.argv[2], 'sharp.cjs')
+  : resolve(HERE, '..', 'sharp-ios', 'sharp.cjs')
 
 if (!existsSync(candidate)) {
   console.error(`cannot find the codec at ${candidate}`)

@@ -7,21 +7,30 @@ The previous workaround was a placeholder stub that kept module evaluation
 alive but returned fabricated data, so `read_image` always failed with
 `Unsupported or malformed image data.`
 
-This directory now contains a self-contained pure-JS implementation of the
-subset of sharp that DSH actually uses. It decodes and encodes real images with
-only `node:zlib`.
+This directory contains a self-contained pure-JS implementation of the subset of
+sharp that DSH actually uses. It decodes and encodes real images with only
+`node:zlib`.
+
+An optional native accelerator takes over decode, resize and PNG encode when it
+is present — measured at 45–80× on those three steps. It is built from the C in
+[`native/`](native/README.md), works on the device with the jailbreak's own
+clang, and is never required: `sharp.cjs` falls back to the code below whenever
+it is absent or unloadable.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `dist/index.cjs` | CommonJS entry (`main`) |
-| `dist/index.mjs` | ESM entry (used by `import sharp from "sharp"`) |
-| `dist/ios/sharp.cjs` | sharp-like chainable pipeline + format dispatch |
-| `dist/ios/png.cjs` | PNG decoder/encoder and metadata reader |
-| `dist/ios/jpeg.cjs` | JPEG decoder/encoder and metadata reader |
-| `dist/ios/resize.cjs` | separable area/bilinear resampler |
-| `dist/ios/exif.cjs` | EXIF orientation reader |
+| `index.cjs` | replacement for sharp's package entry, redirects to `ios/sharp.cjs` |
+| `sharp.cjs` | sharp-like chainable pipeline + format dispatch (+ native fast path) |
+| `png.cjs` | PNG decoder/encoder and metadata reader |
+| `jpeg.cjs` | JPEG decoder/encoder and metadata reader |
+| `resize.cjs` | separable area/bilinear resampler |
+| `exif.cjs` | EXIF orientation reader |
+| `imgaddon.node` | optional native accelerator (prebuilt) |
+| `native/` | the accelerator's C source, its headers, its build script |
+
+`install.sh` copies these into `node_modules/sharp/dist/ios/`.
 
 ## API surface actually exercised by DSH
 
@@ -70,38 +79,44 @@ fresh on every `toBuffer()` and never mutates the input buffer.
 
 ## Performance (Node `--jitless`)
 
-Everything is interpreter-bound. Measured on this device:
+Without the native accelerator everything is interpreter-bound. Measured on this
+device, on a 1254×1254 PNG:
 
-* PNG decode/encode, resize: effectively instant for the 480×200 test image.
-* JPEG baseline decode: ~0.3 MP/s (~0.9 s for 512×512, ~1.6 s before the
-  DC-only IDCT fast path). A 12 MP JPEG would take on the order of a minute.
+| Step | pure JS | native `imgaddon.node` |
+| --- | --- | --- |
+| decode | 2,910 ms | **65 ms** |
+| resize | 6,921 ms | **86 ms** |
+| PNG encode | 11,298 ms | **262 ms** |
+| JPEG encode | 9,273 ms | 2,941 ms (no native encoder; the gain is decode + resize) |
+
+The pure-JS figures for smaller images are less dramatic but the shape is the
+same: JPEG baseline decode runs at roughly 0.3 MP/s, and a 12 MP JPEG would take
+on the order of a minute. Set `DSH_NATIVE_CODEC=0` to force the pure-JS paths, and
+see [`native/README.md`](native/README.md) for what the accelerator does and does
+not guarantee.
 
 ## Self-test
 
-From the workspace root:
+`fixtures/verify-image-codec.mjs` in the repository root checks decode, metadata,
+resize and both encode paths against fixtures whose recorded truth is in
+`blind-test.answer.txt` — a passing run means the pixels really decoded, not that
+something plausible came back. Run it after `install.sh`, from the install
+directory on the device:
 
 ```
-./node --jitless sharp-ios-selftest.mjs     # full transcript also in sharp-ios-selftest.log
-./node --jitless sharp-ios-e2e.mjs          # DSH attachment pipeline only
+./node --jitless fixtures/verify-image-codec.mjs ../dsh/node_modules/sharp/dist/ios
+DSH_NATIVE_CODEC=0 ./node --jitless fixtures/verify-image-codec.mjs ../dsh/node_modules/sharp/dist/ios
 ```
 
-The self-test checks `metadata()` and raw pixels against an independent
-reference decode of `test-image.png`, PNG/JPEG encode round-trips, real baseline
-and progressive system JPEGs, explicit WebP/GIF failures, and the real
-`saveImageFile` / `readImageFile` / `readRequestImageFile` pipeline.
+Both are expected to print `16 passed, 0 failed` — the first exercises the native
+path, the second the pure-JS one.
 
 ## Rollback
 
-The original placeholder stub is preserved in two places:
-
-* `/tmp/sharp-backup/` (the whole directory, as requested by the task)
-* `sharp-ios-rollback/` in the workspace (durable)
-
-To restore the stub:
-
-```
-sh sharp-ios-rollback/restore.sh
-```
+`install.sh` copies every file it replaces to `<name>.dsh-ios.bak` first, so any
+single file can be restored by copying it back. To drop only the native
+accelerator, delete `dist/ios/imgaddon.node` (or set `DSH_NATIVE_CODEC=0`) — the
+codec continues in pure JS with no other change.
 
 ## Loading
 

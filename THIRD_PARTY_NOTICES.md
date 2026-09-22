@@ -1,8 +1,8 @@
 # Third-party notices
 
-`dsh-ios` is an adaptation layer. It ships **no** third-party binaries and
-re-implements rather than redistributes wherever it can. What it does contain,
-and under what terms, is below.
+`dsh-ios` is an adaptation layer. It re-implements rather than redistributes
+wherever it can. What it does contain, and under what terms, is below — including
+the one binary it ships, which is a build of its own source.
 
 ---
 
@@ -43,11 +43,58 @@ module.exports = require('./ios/sharp.cjs');
 ```
 
 No `sharp` source, binaries or vendored dependencies are redistributed. The
-remaining five files in `sharp-ios/` are original work that happens to implement
-a compatible subset of `sharp`'s public API; they contain no `sharp` code.
+remaining files in `sharp-ios/` are original work that happens to implement a
+compatible subset of `sharp`'s public API; they contain no `sharp` code.
 
 `install.sh` obtains `sharp` itself from npm. Apache-2.0 requires that
 modifications be stated — this file *is* the statement.
+
+### `stb` — single-header libraries, vendored in `sharp-ios/native/stb/`
+
+**License: public domain (dual-licensed MIT, at your option)** — Copyright (c)
+Nothings and contributors; see the end of each header for the full text.
+
+Upstream: <https://github.com/nothings/stb>
+
+| File | Version | Used for |
+|---|---|---|
+| `stb_image.h` | v2.30 | PNG/JPEG decode in the native image accelerator |
+| `stb_image_write.h` | v1.16 | PNG encode in the same |
+
+Vendored rather than fetched so that `sharp-ios/native/build.sh` works offline and
+so that the source that produced the shipped binary is exactly the source in the
+tree. `stb_image_resize2.h` is deliberately **not** vendored — the addon uses its
+own resampler, which is a bit-exact port of the JS one, and nothing else.
+
+These headers are compiled into `sharp-ios/imgaddon.node` (see below), which is
+therefore a redistribution of compiled stb code. Public domain imposes no
+condition; the MIT option is noted here for completeness.
+
+---
+
+## The one binary this repository ships
+
+### `sharp-ios/imgaddon.node`
+
+**Original work, compiled from this repository's own source** — no third-party
+binary is redistributed by it, beyond the vendored-to-source stb headers above.
+
+It is a Node N-API addon, built *on the device* by `sharp-ios/native/build.sh`
+from `sharp-ios/native/imgaddon.c`, and installed by `install.sh` (which re-signs
+it with `ldid`, as iOS requires for any executable code).
+
+```
+source    sharp-ios/native/imgaddon.c  +  sharp-ios/native/stb/*
+script    sharp-ios/native/build.sh
+compiler  Procursus clang 14.0.0, target arm64-apple-ios16.0
+size      230,624 bytes
+sha256    437d1bb65c042c3e906d3f7c3602490d9c87164eeefe19ddcbbc24f74dad3925
+```
+
+It is optional by construction: delete the file and the codec runs in pure JS.
+Its behaviour is compared byte-for-byte against the pure-JS codec by
+`sharp-ios/native/compare-pixels.cjs`, and the reasoning is in
+[`sharp-ios/native/README.md`](sharp-ios/native/README.md).
 
 ---
 
@@ -57,6 +104,8 @@ The following are original to this project and carry this repository's license:
 
 ```
 sharp-ios/         exif.cjs, png.cjs, jpeg.cjs, resize.cjs, sharp.cjs
+sharp-ios/native/  imgaddon.c, build.sh, compare-pixels.cjs, jpeg-diff.cjs
+                   (stb/ is vendored, not original — see above)
 rg-ios/            rg-impl.mjs, package.json, rg-launcher.tmpl
 preload/           wasm-polyfill.js, fetch-https-shim.js,
                    iterator-polyfill.js, es-late-polyfill.js, settings-mobile.css

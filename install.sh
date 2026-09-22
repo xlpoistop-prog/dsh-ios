@@ -175,6 +175,30 @@ else
   install_file "$HERE/sharp-ios/resize.cjs" "$SHARP/dist/ios/resize.cjs"
   install_file "$HERE/sharp-ios/sharp.cjs"  "$SHARP/dist/ios/sharp.cjs"
   install_file "$HERE/sharp-ios/IOS-PURE-JS.md" "$SHARP/dist/ios/IOS-PURE-JS.md"
+
+  # The native accelerator. sharp.cjs requires it from its own directory and
+  # falls back to pure JS whenever it is absent, unsigned, or fails to load — so
+  # this is an optimisation, never a dependency, and a missing file here is not
+  # an error. The prebuilt copy in this repo was produced by
+  # sharp-ios/native/build.sh, which can equally be run on the device to build it
+  # from source.
+  if [ -f "$HERE/sharp-ios/imgaddon.node" ]; then
+    install_file "$HERE/sharp-ios/imgaddon.node" "$SHARP/dist/ios/imgaddon.node"
+    # iOS will not map unsigned executable code — the same reason every other
+    # native module here is re-signed, and the same reason they must live inside
+    # jbroot.
+    if [ "$HAVE_LDID" != "1" ]; then
+      say "   warning: no ldid — imgaddon.node stays unsigned and will be ignored"
+    elif [ "$DRY_RUN" = "1" ]; then
+      say "   [dry-run] ldid -S $SHARP/dist/ios/imgaddon.node"
+    else
+      ldid -S "$SHARP/dist/ios/imgaddon.node" \
+        || say "   warning: ldid failed on imgaddon.node — the codec will use pure JS"
+    fi
+  else
+    say "   no imgaddon.node in the repo — the codec runs in pure JS"
+  fi
+
   # The one file that makes the overlay take effect.
   install_file "$HERE/sharp-ios/index.cjs"  "$SHARP/dist/index.cjs"
 fi

@@ -30,5 +30,9 @@
 *.webp binary
 *.gif binary
 
+# The native image accelerator: a Mach-O binary, and signed. Git must not
+# normalise line endings inside it, and a diff of it is noise.
+*.node binary -diff
+
 # Patched DSH build output — large generated files, do not diff.
 patched/*.js -diff linguist-generated
