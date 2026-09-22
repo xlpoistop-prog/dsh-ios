@@ -24,7 +24,19 @@
 
 set -u
 
-BASE="$(cd "$(dirname "$0")" && pwd)"
+# Where the install lives, not where this file lives.
+#
+# The repo keeps this under scripts/, but everything it needs — node, the DSH
+# tree, the preloads — is at the install root, and every caller (bootstrap.sh,
+# install.sh, both READMEs) invokes it as `sh scripts/start.sh`. Taking dirname
+# literally therefore looked for <install>/scripts/node, which does not exist, so
+# a fresh install died on its last step. If this file sits in a scripts/
+# directory, the root is its parent.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+case "$(basename "$HERE")" in
+  scripts) BASE="$(cd "$HERE/.." && pwd)" ;;
+  *)       BASE="$HERE" ;;
+esac
 PORT="${1:-3080}"
 
 # DSH_SAFE=1 keeps this from killing unrelated node processes. By default the
@@ -98,17 +110,45 @@ fi
 
 rm -f server.log
 
+# The two preloads and the patch overlay live in subdirectories of this repo
+# (preload/, and inside the DSH tree), while a hand-assembled install tends to
+# have copies of everything at the root — which is what the device this was
+# written for actually has. Accept either, or a fresh install dies on its last
+# step looking for ./wasm-polyfill.js, which the repo never puts there.
+first_of() {  # first_of <path...>
+  for _p in "$@"; do
+    if [ -e "$_p" ]; then printf '%s' "$_p"; return 0; fi
+  done
+  return 1
+}
+
+WASM="$(first_of ./preload/wasm-polyfill.js ./wasm-polyfill.js)" || {
+  echo "ERROR: wasm-polyfill.js not found (looked in ./preload and ./)"; exit 1; }
+SHIM="$(first_of ./preload/fetch-https-shim.js ./fetch-https-shim.js)" || {
+  echo "ERROR: fetch-https-shim.js not found (looked in ./preload and ./)"; exit 1; }
+PATCH="$(first_of ./dsh/ios.patch.yml ./ios.patch.yml)" || PATCH=""
+
 echo "jbroot:    $JB"
 echo "base:      $BASE"
 echo "workspace: $BASE/workspace"
+echo "preloads:  $WASM  +  $SHIM"
+if [ -n "$PATCH" ]; then echo "patch:     $PATCH"; else echo "patch:     none found"; fi
 echo "starting dsh web on port $PORT"
 
-nohup ./node --expose-internals \
-  --import ./wasm-polyfill.js \
-  --import ./fetch-https-shim.js \
-  ./dsh/node_modules/@deepseek-ai/dsh/lib/bin.js web \
-  --patch ./ios.patch.yml --no-open \
-  --host 127.0.0.1 --port "$PORT" </dev/zero >server.log 2>&1 &
+# Relative paths on purpose: node resolves them against its own (real) cwd.
+if [ -n "$PATCH" ]; then
+  nohup ./node --expose-internals \
+    --import "$WASM" --import "$SHIM" \
+    ./dsh/node_modules/@deepseek-ai/dsh/lib/bin.js web \
+    --patch "$PATCH" --no-open \
+    --host 127.0.0.1 --port "$PORT" </dev/zero >server.log 2>&1 &
+else
+  nohup ./node --expose-internals \
+    --import "$WASM" --import "$SHIM" \
+    ./dsh/node_modules/@deepseek-ai/dsh/lib/bin.js web \
+    --no-open \
+    --host 127.0.0.1 --port "$PORT" </dev/zero >server.log 2>&1 &
+fi
 echo $! > server.pid
 PID="$(cat server.pid)"
 

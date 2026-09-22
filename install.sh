@@ -25,6 +25,16 @@ set -eu
 LC_ALL=C
 export LC_ALL
 
+# --jitless is mandatory on this platform, and its absence does not produce a
+# useful error: V8's code generator faults on iOS and the process dies with
+# SIGBUS, so the shell prints only "Bus error: 10". start.sh exports this for the
+# server; install.sh calls node itself (the Mach-O patcher) and did not, which is
+# why step 6 failed with no explanation at all.
+case " ${NODE_OPTIONS:-} " in
+  *" --jitless "*) : ;;
+  *) NODE_OPTIONS="${NODE_OPTIONS:-} --jitless"; export NODE_OPTIONS ;;
+esac
+
 # ---------------------------------------------------------------------------
 # arguments
 # ---------------------------------------------------------------------------
@@ -237,6 +247,25 @@ step "6/7  native addon platform byte  (node-pty, node-addon-system)"
 
 # dyld refuses these with \"have 'macOS', need 'iOS'\" because of the
 # LC_BUILD_VERSION platform field. One byte, in place, then re-sign.
+# A path Node can actually open.
+#
+# The shell resolves /var/mobile inside jbroot; Node — a stock binary with no
+# rootHide interposition — resolves it against the real root, and on iOS a path
+# it cannot find does not produce a clean ENOENT: the process dies with SIGBUS and
+# prints nothing at all. The shell reports only "Bus error: 10", which says
+# nothing about paths.
+#
+# That is exactly what happened here: the Mach-O patcher was handed
+# /var/mobile/... and crashed, so step 6 failed on every install.
+#
+# `pwd -P` comes back as /rootfs/private/var/..., which is the form Node wants
+# once the /rootfs prefix is dropped. On a rootless jailbreak there is no /rootfs
+# and this is simply the path itself.
+real_for_node() {  # real_for_node <absolute path in the shell's view>
+  ( cd "$(dirname "$1")" 2>/dev/null &&
+    printf '%s/%s' "$(pwd -P | sed 's|^/rootfs||')" "$(basename "$1")" )
+}
+
 patch_macho() {
   _pm_target="$1"
   [ -f "$_pm_target" ] || { say "   not present: $_pm_target"; return 0; }
@@ -246,8 +275,11 @@ patch_macho() {
     return 0
   fi
 
-  "$NODE_BIN" "$HERE/tools/patch-macho-ios.mjs" "$_pm_target" || {
+  "$NODE_BIN" "$(real_for_node "$HERE/tools/patch-macho-ios.mjs")" "$(real_for_node "$_pm_target")" || {
     say "   patch failed: $_pm_target"; return 1; }
+
+  # The patcher rewrote the platform slot, which invalidates the code signature —
+  # that is expected, and dyld will refuse the file until this re-signs it.
 
   if [ "$HAVE_LDID" = "1" ]; then
     ldid -S "$_pm_target" 2>/dev/null || ldid -S"$HERE/scripts/entitlements.plist" "$_pm_target" 2>/dev/null \

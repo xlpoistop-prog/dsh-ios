@@ -896,13 +896,38 @@ else
 
   say "   pushing (~40 MB compressed, a few hundred MB unpacked)"
   push "$WORK/dsh-tree.tar" "/var/mobile/Documents" "dsh-tree.tar"
+
+  # Check what arrived before extracting it.
+  #
+  # This is not paranoia: a run against a device produced a tree with 308 of its
+  # 648 packages, exit status 0 from tar, and a clean-looking install — because
+  # the only check afterwards was whether one file existed, and that one file was
+  # in the part that arrived. Comparing the byte count is exact and costs one
+  # round trip.
+  _local_size="$(wc -c < "$WORK/dsh-tree.tar" | tr -d ' ')"
+  _remote_size="$(dev_q "wc -c < '/rootfs/var/mobile/Documents/dsh-tree.tar'" | tr -d '\r ')"
+  if [ "$_local_size" != "$_remote_size" ]; then
+    die "the DSH tree archive did not arrive intact.
+     built here:  $_local_size bytes
+     on the phone: ${_remote_size:-<no answer>} bytes
+   Re-run; if it keeps happening the transfer, not the phone, is the problem."
+  fi
+  note "archive intact ($_local_size bytes)"
+
   # No gzip on the device, so the archive is plain tar and extracts with tar
   # alone. Verified on the target: `tar -xzf` fails with "gzip: cannot exec".
   mutate "mkdir -p '$INSTALL_DIR/dsh' && cd '$INSTALL_DIR/dsh' && tar -xf '/rootfs/var/mobile/Documents/dsh-tree.tar' && rm -f '/rootfs/var/mobile/Documents/dsh-tree.tar'"
 
+  # And check what came out of it. bin.js alone is not enough — see above.
   CHECK="$(dev_q "[ -f '$INSTALL_DIR/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js' ] && echo ok || echo missing" | tr -d '\r')"
   [ "$CHECK" = "ok" ] || die "the DSH tree did not land where expected under $INSTALL_DIR/dsh"
-  note "tree in place"
+
+  _pkgs="$(dev_q "find '$INSTALL_DIR/dsh/node_modules' -name package.json | wc -l" | tr -d '\r ')"
+  note "tree in place ($_pkgs package.json files)"
+  if [ -n "$_pkgs" ] && [ "$_pkgs" -lt 100 ]; then
+    die "the tree extracted but looks far too small ($_pkgs package.json files).
+   That is a partial extraction, not a working install."
+  fi
 fi
 
 # ---------------------------------------------------------------------------

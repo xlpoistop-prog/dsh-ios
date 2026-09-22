@@ -5,7 +5,14 @@
 # Also useful right after a re-jailbreak: the pidfile can name a process from
 # the previous boot, and kill simply reports "no such process" — harmless.
 
-BASE="$(cd "$(dirname "$0")" && pwd)"
+# Where the install lives, not where this file lives — the pidfile sits at the
+# install root. Same reasoning as in start.sh: the repo keeps this under
+# scripts/, and callers invoke it as `sh scripts/stop.sh`.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+case "$(basename "$HERE")" in
+  scripts) BASE="$(cd "$HERE/.." && pwd)" ;;
+  *)       BASE="$HERE" ;;
+esac
 
 if [ ! -f "$BASE/server.pid" ]; then
   echo "no server.pid — nothing recorded as running"
