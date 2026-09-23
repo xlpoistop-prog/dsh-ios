@@ -609,6 +609,36 @@ Two consequences worth repeating up front:
 * native `.node` modules **must live inside jbroot** — iOS's sandbox blocks
   `mmap()` of executable code from the real `/var/mobile/Documents`
 
+### The iOS keyboard, and the visual viewport
+
+Mobile Safari does not shrink the *layout* viewport when the keyboard opens. It
+keeps it at full height and pans the **visual** viewport instead — so an app that
+sizes its shell against the layout viewport puts the composer below the band you
+can actually see. Measured on the device this targets: the composer was off
+screen by up to **186 px on every backspace**.
+
+`preload/keyboard-inset.js` publishes `visualViewport.height` and `.offsetTop` as
+custom properties, plus a `data-dsh-vv` attribute, and
+`preload/keyboard-inset.css` sizes the shell from them. The CSS uses a `transform`
+on `body` on purpose: any non-`none` transform makes that element the containing
+block for `position: fixed` descendants, so a shell that would otherwise size
+against the viewport starts sizing against the body box instead.
+
+The same layer stops the composer's toolbar buttons from raising the keyboard, by
+intercepting `mousedown` in the capture phase: the app wires `keepFocus` (which
+re-focuses the editor) onto commands, attach, stop and send, which on a phone
+means tapping *attach* pops the keyboard up. The `click` event is left alone, so
+the buttons still work.
+
+Two approaches were tried and reverted, and are worth not re-deriving:
+`html { overflow: hidden }` stops the layout viewport shrinking and pushes iOS
+into panning instead, and `position: relative; top` participates in layout, so iOS
+re-pans and the two undo each other — a 142 px oscillation.
+
+This one is version-coupled in a small way: the button interception matches
+`[class*="composerSeat"]`, so if the web frontend renames that class the
+interception silently stops applying. The viewport part is unaffected.
+
 ---
 
 ## Layout
@@ -618,7 +648,8 @@ install.sh                  idempotent installer
 sharp-ios/                  image codec: pure-JS implementation, plus an
                             optional native accelerator (native/)
 rg-ios/                     pure-JS ripgrep replacement
-preload/                    runtime shims: WebAssembly, fetch, browser polyfills
+preload/                    runtime shims (WebAssembly, fetch), browser
+                            polyfills, and the iOS keyboard layer
 shims/                      native-module stand-ins: koffi, win32-process, flock
 patched/                    the three modified DSH files + what changed and why
 tools/                      Mach-O patcher, browser diagnostic overlay

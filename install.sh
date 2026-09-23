@@ -313,22 +313,30 @@ else
   if [ -f "$HERE/preload/settings-mobile.css" ]; then
     install_file "$HERE/preload/settings-mobile.css" "$FRONTEND/settings-mobile.css"
   fi
+  # The keyboard layer. Mobile Safari keeps the layout viewport at full height
+  # when the keyboard opens, so the composer ends up below the visible band; this
+  # binds the shell to the visual viewport instead. Both files are needed — the
+  # JS publishes the custom properties the CSS consumes.
+  if [ -f "$HERE/preload/keyboard-inset.js" ]; then
+    install_file "$HERE/preload/keyboard-inset.js"  "$FRONTEND/keyboard-inset.js"
+    install_file "$HERE/preload/keyboard-inset.css" "$FRONTEND/keyboard-inset.css"
+  fi
 
-  # Inject the two scripts ahead of the module bundle. Idempotent: strip any
-  # previous injection before adding it back.
+  # Inject them ahead of the module bundle. Idempotent: strip any previous
+  # injection before adding it back, which is what makes a second run safe.
   if [ -f "$FRONTEND/index.html" ]; then
     backup "$FRONTEND/index.html"
     if [ "$DRY_RUN" = "1" ]; then
       say "   [dry-run] inject polyfill <script> tags into index.html"
     else
       tmp="$FRONTEND/index.html.dsh-ios.tmp"
-      grep -v 'iterator-polyfill\|es-late-polyfill\|settings-mobile.css' \
+      grep -v 'iterator-polyfill\|es-late-polyfill\|settings-mobile.css\|keyboard-inset' \
         "$FRONTEND/index.html" > "$tmp"
-      sed -e 's#<script type="module"#<script src="./iterator-polyfill.js"></script>\n    <script src="./es-late-polyfill.js"></script>\n    <script type="module"#' \
-          -e 's#</head>#<link rel="stylesheet" href="./settings-mobile.css">\n  </head>#' \
+      sed -e 's#<script type="module"#<script src="./iterator-polyfill.js"></script>\n    <script src="./es-late-polyfill.js"></script>\n    <script src="./keyboard-inset.js"></script>\n    <script type="module"#' \
+          -e 's#</head>#  <link rel="stylesheet" href="./settings-mobile.css">\n    <link rel="stylesheet" href="./keyboard-inset.css">\n  </head>#' \
           "$tmp" > "$FRONTEND/index.html"
       rm -f "$tmp"
-      say "   injected   $(grep -c 'iterator-polyfill\|es-late-polyfill' "$FRONTEND/index.html") script tag(s)"
+      say "   injected   $(grep -c 'iterator-polyfill\.js\|es-late-polyfill\.js\|keyboard-inset\.js' "$FRONTEND/index.html") script(s), $(grep -c 'settings-mobile\.css\|keyboard-inset\.css' "$FRONTEND/index.html") stylesheet(s)"
     fi
   fi
 fi

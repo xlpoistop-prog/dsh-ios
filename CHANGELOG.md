@@ -11,6 +11,69 @@ different one with `--dsh-version`.
 
 ---
 
+## 2026-09-23
+
+### Added
+
+* **The iOS keyboard layer** — `preload/keyboard-inset.{js,css}`, installed and
+  injected by `install.sh` alongside the existing polyfills. Mobile Safari keeps
+  the layout viewport at full height when the keyboard opens and pans the visual
+  viewport instead, so the composer ended up off screen by up to **186 px on every
+  backspace**. The layer binds the shell to the visual viewport, and separately
+  stops the composer's toolbar buttons from raising the keyboard at all. The
+  measurements, and the two approaches that were tried and reverted, are in the
+  README and in comments at the top of both files.
+
+  The injection was verified twice: replaying it against the pristine
+  `index.html` reproduces the file running on the device byte for byte (941
+  bytes), and a second pass over its own output changes nothing — checked with
+  GNU sed here *and* with the device's own sed, since the replacement relies on
+  `\n`, which is not portable to BSD sed.
+
+### Fixed
+
+Six bugs found by installing DSH into an isolated directory on the device — the
+first time this path had been exercised end to end against a *fresh* install
+rather than over an already-working one. None of them were specific to that
+experiment; all six were in the published flow.
+
+* `scripts/start.sh` and `scripts/stop.sh` computed the install root with
+  `dirname($0)`. The repo keeps them in `scripts/` and every caller runs
+  `sh scripts/start.sh`, so it looked for `<install>/scripts/node` and failed —
+  a fresh install died on its very last step. The device this was written for
+  never noticed, because it has a legacy copy of `start.sh` at the install root,
+  and that is what has been starting DSH all along.
+* `start.sh` imported the preloads as `./wasm-polyfill.js` and
+  `./fetch-https-shim.js`, and passed `--patch ./ios.patch.yml`. The repo keeps
+  those in `preload/` and `install.sh` puts the overlay inside the DSH tree, so
+  all three paths pointed at files that do not exist. It now accepts either
+  layout, because both exist in the wild.
+* `install.sh` called node for the Mach-O patch without `--jitless`. On iOS that
+  is not a warning: V8's code generator faults, the process dies with SIGBUS, and
+  the shell prints only `Bus error: 10`. Step 6 failed on every install, with no
+  explanation of any kind. `NODE_OPTIONS` now carries the flag for everything
+  `install.sh` runs, as `start.sh` already did for the server.
+* The same call handed node absolute `/var/mobile` paths, which node resolves
+  against the real filesystem — it has no rootHide interposition and cannot see
+  jbroot. Paths now come from `pwd -P` with the `/rootfs` prefix removed.
+* `bootstrap.sh` never checked that the DSH tree archive arrived intact. One run
+  extracted 174 MB of a 610 MB archive — 308 of 648 packages — and passed anyway,
+  because the only check was whether one file existed, and that file was in the
+  part that landed. It now compares byte counts before extracting and package
+  counts after.
+* `fixtures/verify-image-codec.mjs` resolved its codec argument with `join()`, so
+  a relative path satisfied `existsSync` (cwd-relative) and then failed `require`
+  (module-relative). `resolve()` makes the documented invocation work.
+
+### Verified
+
+* A full install into a fresh directory now completes all seven steps, including
+  the Mach-O patch and the image accelerator.
+* The tree integrity check was exercised on a real archive: 639,232,000 bytes,
+  648 packages.
+
+---
+
 ## 2026-09-22
 
 ### Added

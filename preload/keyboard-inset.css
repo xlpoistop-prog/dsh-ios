@@ -1,0 +1,46 @@
+/*
+ * DSH Web - put the app shell in the VISUAL viewport band (attempt 3).
+ *
+ * Paired with keyboard-inset.js, which publishes:
+ *   --dsh-vv-h     visualViewport.height      (height of the visible band)
+ *   --dsh-vv-top   visualViewport.offsetTop   (where the band starts)
+ *   data-dsh-vv    "keyboard" | "full"
+ *
+ * What the probe measured (three runs, iPhone 15 / iOS 17.1.1):
+ *
+ *   composer screen bottom = 659 - vvTop        (659 = layout viewport height)
+ *   composer is visible   <=>  659 - vvTop <= vvH
+ *
+ *   vvTop=202 vvH=315 -> 457 > 315   off screen below by 142   <- the jump
+ *   vvTop=398 vvH=197 -> 261 > 197   off screen below by  64
+ *   vvTop=344 vvH=315 -> 315 <= 315  correct (the settled state)
+ *
+ * So the composer is anchored to the layout viewport bottom (659) while the band
+ * is only vvH tall and starts at vvTop. The shell chain is pure flex
+ * (.wSkVaW_root > .wSkVaW_body{flex:1} > .wSkVaW_scrollBody{flex:1}), so its
+ * height has to come from the top of the tree - but the shell is likely
+ * position:fixed;inset:0, and a fixed element sizes against the viewport, so a
+ * height on #root would never reach it. That is what transform is for: any
+ * non-none transform makes this element the containing block for fixed
+ * descendants, so a fixed shell starts sizing against the body box instead.
+ *
+ * Deliberately NOT here (both were tried and made things worse):
+ *   - html { overflow: hidden }  stops the layout viewport shrinking for the
+ *     keyboard, which pushes iOS into panning the visual viewport instead.
+ *   - position: relative; top  participates in layout, so iOS sees the shell
+ *     move and re-pans; each side then undoes the other (142px oscillation).
+ */
+
+html[data-dsh-vv] {
+  overscroll-behavior: none;
+}
+
+html[data-dsh-vv] body,
+html[data-dsh-vv] #root {
+  height: var(--dsh-vv-h, 100%);
+  min-height: 0;
+}
+
+html[data-dsh-vv] body {
+  transform: translateY(var(--dsh-vv-top, 0px));
+}

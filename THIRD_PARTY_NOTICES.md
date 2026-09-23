@@ -108,7 +108,8 @@ sharp-ios/native/  imgaddon.c, build.sh, compare-pixels.cjs, jpeg-diff.cjs
                    (stb/ is vendored, not original — see above)
 rg-ios/            rg-impl.mjs, package.json, rg-launcher.tmpl
 preload/           wasm-polyfill.js, fetch-https-shim.js,
-                   iterator-polyfill.js, es-late-polyfill.js, settings-mobile.css
+                   iterator-polyfill.js, es-late-polyfill.js, settings-mobile.css,
+                   keyboard-inset.js, keyboard-inset.css
 shims/             koffi.js, win32-process.js, flock-stub.js, flock-patched.js
 patched/           (see above — derived from MIT upstream)
 tools/             patch-macho-ios.mjs, patch-macho-ios.py,

@@ -532,6 +532,28 @@ glob 用 `--files`，grep 用 `--json`（ripgrep 公开的 JSON schema）——
 * 原生 `.node` 模块**必须放在 jbroot 内** —— iOS 沙箱阻止从真实
   `/var/mobile/Documents` `mmap()` 可执行代码
 
+### iOS 键盘与 visual viewport
+
+手机 Safari 在键盘弹出时**不缩小 layout viewport**：它保持全高，改为平移 **visual** viewport。
+于是"按 layout viewport 给外壳定尺寸"的网页，会把输入框放到你看得见的那条带子下面。
+在目标设备上实测：**每按一次退格，输入框最多跑到屏幕外 186 px。**
+
+`preload/keyboard-inset.js` 把 `visualViewport.height` / `.offsetTop` 发布成 CSS 变量，
+外加一个 `data-dsh-vv` 属性；`preload/keyboard-inset.css` 据此给外壳定尺寸。CSS 里那个
+`body { transform }` 是故意的：**只要 transform 不是 `none`**，这个元素就会成为
+`position: fixed` 后代的包含块，于是一个本来按 viewport 定尺寸的外壳，改为按 body 盒计算。
+
+同一层还阻止输入框工具栏按钮把键盘顶起来 —— 在 **capture 阶段**拦截 `mousedown`：
+应用给 命令 / 附件 / 停止 / 发送 四个按钮都挂了 `keepFocus`（它会重新聚焦编辑器），
+在手机上就是"点一下附件，键盘弹起来"。`click` 事件不动，所以按钮功能照旧。
+
+两个方案试过并回退，别再重新推导：`html { overflow: hidden }` 会阻止 layout viewport 收缩，
+把 iOS 推向平移；而 `position: relative; top` 参与布局，iOS 于是再次平移 —— 两边以
+**142 px** 互相抵消。
+
+这一层有一处**轻微的版本耦合**：按钮拦截靠 `[class*="composerSeat"]` 匹配类名，若前端改了
+这个类名，拦截会**静默失效**（viewport 那部分不受影响）。
+
 ---
 
 ## 目录结构
@@ -540,7 +562,8 @@ glob 用 `--files`，grep 用 `--json`（ripgrep 公开的 JSON schema）——
 install.sh                  幂等安装器
 sharp-ios/                  图片编解码：纯 JS 实现，外加可选的原生加速（native/）
 rg-ios/                     纯 JS ripgrep 替代
-preload/                    运行时垫片：WebAssembly、fetch、浏览器 polyfill
+preload/                    运行时垫片（WebAssembly、fetch）、浏览器 polyfill，
+                            以及 iOS 键盘那一层
 shims/                      原生模块替身：koffi、win32-process、flock
 patched/                    三个改过的 DSH 文件 + 改了什么、为什么
 tools/                      Mach-O patcher、浏览器诊断横幅
