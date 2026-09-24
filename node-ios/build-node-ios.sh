@@ -101,7 +101,11 @@ if ! make -j2 > "$LOG" 2>&1; then
   say "   BUILD FAILED. Errors:"
   grep -nE "error:|fatal error|Error [0-9]|ld: |Undefined symbols|clang: error" "$LOG" \
     | grep -viE "no newline|Wnewline-eof|#warning|_GLIBCXX" | tail -60
-  say "   full log: $LOG"
+  # copy the log before leaving, so a failing run still publishes something to
+  # read -- without this the failure output exists only in the CI job's own log,
+  # which cannot be fetched without a token.
+  cp "$LOG" "$DIST/build.log" 2>/dev/null || true
+  say "   full log: $LOG (also copied to $DIST/build.log)"
   exit 1
 fi
 grep -cE "warning:" "$LOG" | sed 's/^/   warnings: /'

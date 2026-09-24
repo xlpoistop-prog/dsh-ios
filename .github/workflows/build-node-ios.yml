@@ -23,7 +23,8 @@ on:
       - ".github/workflows/build-node-ios.yml"
 
 permissions:
-  contents: read
+  # write, for the log branch below
+  contents: write
 
 jobs:
   build:
@@ -85,3 +86,23 @@ jobs:
       - name: Show the tail of the build log
         if: always()
         run: tail -40 dist/build.log || true
+
+      # The job's own log cannot be downloaded without a token, which makes a
+      # failing run unreadable from outside. Publishing it to a branch puts it
+      # behind raw.githubusercontent.com instead, which needs no credentials.
+      - name: Publish the build log to the ci-logs branch
+        if: always()
+        run: |
+          set -eu
+          if [ ! -f dist/build.log ]; then
+            echo "no build.log was produced"
+            exit 0
+          fi
+          git config user.name "dsh-ios ci"
+          git config user.email "noreply@example.com"
+          git checkout -B ci-logs
+          mkdir -p ci-logs
+          cp dist/build.log "ci-logs/build-${GITHUB_RUN_NUMBER}.log"
+          git add -f ci-logs
+          git commit -m "build log for run ${GITHUB_RUN_NUMBER}" || exit 0
+          git push --force origin ci-logs
