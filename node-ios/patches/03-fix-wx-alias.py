@@ -292,15 +292,48 @@ def main():
           marker="ReserveWithExecutableAlias")
 
     # --- 4. platform-darwin.cc: the implementation.
+    #
+    # Anchored on the END of the pthread region, not on the function body. The
+    # body sits inside `#if V8_HAS_PTHREAD_JIT_WRITE_PROTECT && !defined(V8_OS_IOS)`,
+    # so inserting right after it puts the whole implementation inside a block
+    # that is compiled out for an iOS target -- which is precisely where it is
+    # needed. (The first CI run compiled it there; it would have failed to link.)
+    patch(src, "deps/v8/src/base/platform/platform-darwin.cc",
+          "#pragma clang diagnostic pop\n"
+          "#endif\n"
+          "\n"
+          "}  // namespace base\n"
+          "}  // namespace v8",
+          "#pragma clang diagnostic pop\n"
+          "#endif\n" + DARWIN_IMPL + "\n"
+          "}  // namespace base\n"
+          "}  // namespace v8",
+          "platform-darwin.cc: dual mapping implementation",
+          marker="ReserveWithExecutableAlias")
+
+    # --- 4b. pthread_jit_write_protect_np is marked unavailable when the compile
+    # is targeted at iOS. That happens for the host toolset too: it inherits the
+    # target's defines, and clang picks an iOS target when
+    # IPHONEOS_DEPLOYMENT_TARGET is in the environment. Node 22's build got away
+    # with it; Node 24 does not, because it added a definition of this function
+    # whose guard is false on iOS but true for that host compile. Keep the
+    # definition so the host tools still link, and skip the call when the compile
+    # is iOS-targeted -- the iOS path in this port is the dual mapping below.
     patch(src, "deps/v8/src/base/platform/platform-darwin.cc",
           "V8_BASE_EXPORT void SetJitWriteProtected(int enable) {\n"
           "  pthread_jit_write_protect_np(enable);\n"
           "}",
           "V8_BASE_EXPORT void SetJitWriteProtected(int enable) {\n"
+          "#if defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)\n"
+          "  // iOS-targeted compile: the primitive is unavailable here and unused\n"
+          "  // by this port. The symbol still has to exist for the host tools.\n"
+          "  (void)enable;\n"
+          "#else\n"
           "  pthread_jit_write_protect_np(enable);\n"
-          "}" + DARWIN_IMPL,
-          "platform-darwin.cc: dual mapping implementation",
-          marker="ReserveWithExecutableAlias")
+          "#endif\n"
+          "}",
+          "platform-darwin.cc: availability guard on the pthread call",
+          marker="iOS-targeted compile: the primitive is unavailable here and unused")
 
     # --- 5. platform-posix.cc: route permission requests through the alias.
     # Anchored per function rather than on the shared DCHECK preamble: five

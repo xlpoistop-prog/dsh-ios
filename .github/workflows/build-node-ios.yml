@@ -58,7 +58,9 @@ jobs:
 
     env:
       NODE_VERSION: ${{ github.event.inputs.node_version || '24.21.0' }}
-      CACHE_REV: "1"
+      # bumped to 2: IPHONEOS_DEPLOYMENT_TARGET is no longer exported, which
+      # changes every compile command, so objects from rev 1 must not be reused
+      CACHE_REV: "2"
       CACHE_DIR: ${{ github.workspace }}/../node-ios-cache
       SRC_DIR: ${{ runner.temp }}
 

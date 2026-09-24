@@ -79,7 +79,14 @@ say "== [3/6] configure for iphoneos-arm64, min iOS $IOS_MIN"
 cd "$SRC"
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 say "   SDK $(xcrun --sdk iphoneos --show-sdk-version) at $SDK"
-export IPHONEOS_DEPLOYMENT_TARGET="$IOS_MIN"
+# Deliberately NOT `export IPHONEOS_DEPLOYMENT_TARGET=$IOS_MIN`. clang selects an
+# iOS target when that variable is in the environment, and gyp's host toolset
+# inherits the environment -- so the macOS host objects get compiled as iOS. Node
+# 22 tolerated that; Node 24 defines pthread_jit_write_protect_np behind a guard
+# that is false for iOS but true for that host compile, and the result is
+# "'pthread_jit_write_protect_np' is unavailable: not available on iOS" for a
+# translation unit that was meant to be plain macOS. The minimum version is
+# passed to the target compiles explicitly instead, where it belongs.
 export CCACHE_DIR="${CCACHE_DIR:-$HOME/.ccache}"
 export CCACHE_MAXSIZE=4G
 export CCACHE_SLOPPINESS=time_macros
