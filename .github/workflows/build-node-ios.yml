@@ -1,0 +1,87 @@
+name: build-node-ios
+
+# Cross-compile Node.js for jailbroken iOS (arm64).
+#
+# Why this exists at all: this project runs on a phone that has no Mac, and the
+# published iOS Node builds each fail in their own way -- see the header of
+# node-ios/build-node-ios.sh. This builds one from source, with two fixes that
+# remove workarounds the other builds require at runtime.
+#
+# The build runs on GitHub's own macOS runners. No Mac of your own is involved,
+# and for a public repository the macOS runner minutes are free.
+
+on:
+  workflow_dispatch:
+    inputs:
+      node_version:
+        description: "Node.js version to build"
+        required: false
+        default: "24.21.0"
+  push:
+    paths:
+      - "node-ios/**"
+      - ".github/workflows/build-node-ios.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # arm64 host against an arm64 target with a different OS and sysroot. This is
+    # the combination the previous public iOS Node build used successfully.
+    runs-on: macos-14
+    timeout-minutes: 240
+
+    env:
+      NODE_VERSION: ${{ github.event.inputs.node_version || '24.21.0' }}
+      CACHE_DIR: ${{ github.workspace }}/../node-ios-cache
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node's configure rejects Python 3.14, which is what the runner ships.
+      - name: Pin Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Toolchain
+        run: |
+          set -euxo pipefail
+          echo "SDK: $(xcrun --sdk iphoneos --show-sdk-path)"
+          echo "SDK version: $(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "clang: $(clang --version | head -1)"
+          brew list ldid >/dev/null 2>&1 || brew install ldid
+          brew list ccache >/dev/null 2>&1 || brew install ccache
+
+      # The tarball only -- a pristine tree is extracted on every run, because the
+      # patches are anchor-checked and are not safe to re-apply to a tree that an
+      # older version of themselves already modified.
+      - name: Cache the source tarball and ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CACHE_DIR }}
+            ~/.ccache
+          key: node-ios-${{ env.NODE_VERSION }}-${{ hashFiles('node-ios/patches/**', 'node-ios/build-node-ios.sh') }}
+          restore-keys: |
+            node-ios-${{ env.NODE_VERSION }}-
+            node-ios-
+
+      - name: Patch, configure, build, sign
+        run: sh node-ios/build-node-ios.sh
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-${{ env.NODE_VERSION }}-iphoneos-arm64
+          path: |
+            dist/node-v*-iphoneos-arm64
+            dist/node-v*-iphoneos-arm64.sha256
+            dist/entitlements.plist
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Show the tail of the build log
+        if: always()
+        run: tail -40 dist/build.log || true
