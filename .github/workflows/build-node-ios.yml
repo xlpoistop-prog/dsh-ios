@@ -8,7 +8,28 @@ name: build-node-ios
 # remove workarounds the other builds require at runtime.
 #
 # The build runs on GitHub's own macOS runners. No Mac of your own is involved,
-# and for a public repository the macOS runner minutes are free.
+# and for a public repository the standard macOS runners are free.
+#
+# Two things decide how long a run takes:
+#
+#   * The runner. Standard macOS runners come in two shapes at the same free
+#     price: arm64 M1 with 3 cores and 7 GB (macos-14, macos-15), or Intel with
+#     4 cores and 14 GB (macos-15-intel, macos-13). The build is memory-bound --
+#     a cold -O3 V8 translation unit peaks around 3 GB -- so the Intel runner can
+#     carry more parallel compiles and finishes sooner. build-node-ios.sh sizes
+#     -j from the cores and the RAM, so either one works.
+#
+#   * Whether out/ came back from the cache. The patches touch headers that every
+#     V8 translation unit includes, so the *first* build of a given macro set is a
+#     full rebuild no matter what. Later runs restore out/ and rebuild only the
+#     files the patches touched, which turns three hours into minutes.
+#
+# CACHE_REV exists because of the second point. The cache key deliberately does
+# NOT include the patches -- otherwise every edit would throw the object files
+# away, which is the whole cost being avoided. Bump CACHE_REV when the *build
+# configuration* changes (compiler flags, configure arguments, a patch that
+# changes a .gyp file), because in those cases the cached objects are not merely
+# stale, they are wrong.
 
 on:
   workflow_dispatch:
@@ -17,6 +38,10 @@ on:
         description: "Node.js version to build"
         required: false
         default: "24.21.0"
+      runner:
+        description: "Runner label (macos-15-intel = 4 cores/14 GB, macos-14 = 3 cores/7 GB)"
+        required: false
+        default: "macos-15-intel"
   push:
     paths:
       - "node-ios/**"
@@ -28,14 +53,14 @@ permissions:
 
 jobs:
   build:
-    # arm64 host against an arm64 target with a different OS and sysroot. This is
-    # the combination the previous public iOS Node build used successfully.
-    runs-on: macos-14
-    timeout-minutes: 240
+    runs-on: ${{ github.event.inputs.runner || 'macos-15-intel' }}
+    timeout-minutes: 360
 
     env:
       NODE_VERSION: ${{ github.event.inputs.node_version || '24.21.0' }}
+      CACHE_REV: "1"
       CACHE_DIR: ${{ github.workspace }}/../node-ios-cache
+      SRC_DIR: ${{ runner.temp }}
 
     steps:
       - uses: actions/checkout@v4
@@ -49,25 +74,26 @@ jobs:
       - name: Toolchain
         run: |
           set -euxo pipefail
+          echo "arch: $(uname -m)  cores: $(sysctl -n hw.ncpu)  ram: $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
           echo "SDK: $(xcrun --sdk iphoneos --show-sdk-path)"
           echo "SDK version: $(xcrun --sdk iphoneos --show-sdk-version)"
           echo "clang: $(clang --version | head -1)"
           brew list ldid >/dev/null 2>&1 || brew install ldid
           brew list ccache >/dev/null 2>&1 || brew install ccache
 
-      # The tarball only -- a pristine tree is extracted on every run, because the
-      # patches are anchor-checked and are not safe to re-apply to a tree that an
-      # older version of themselves already modified.
-      - name: Cache the source tarball and ccache
+      # The tarball, ccache, and the build tree's out/ directory. out/ is what
+      # makes a repeat run fast; see the note at the top about CACHE_REV.
+      - name: Cache source tarball, ccache, and build tree
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.CACHE_DIR }}
             ~/.ccache
-          key: node-ios-${{ env.NODE_VERSION }}-${{ hashFiles('node-ios/patches/**', 'node-ios/build-node-ios.sh') }}
+            ${{ env.SRC_DIR }}/node-v${{ env.NODE_VERSION }}/out
+          key: node-ios-${{ env.NODE_VERSION }}-rev${{ env.CACHE_REV }}-${{ runner.arch }}
           restore-keys: |
+            node-ios-${{ env.NODE_VERSION }}-rev${{ env.CACHE_REV }}-
             node-ios-${{ env.NODE_VERSION }}-
-            node-ios-
 
       - name: Patch, configure, build, sign
         run: sh node-ios/build-node-ios.sh
@@ -90,6 +116,9 @@ jobs:
       # The job's own log cannot be downloaded without a token, which makes a
       # failing run unreadable from outside. Publishing it to a branch puts it
       # behind raw.githubusercontent.com instead, which needs no credentials.
+      #
+      # fetch first, so that when several runs overlap they add to the branch
+      # instead of each force-replacing it with its own single file.
       - name: Publish the build log to the ci-logs branch
         if: always()
         run: |
@@ -100,7 +129,11 @@ jobs:
           fi
           git config user.name "dsh-ios ci"
           git config user.email "noreply@example.com"
-          git checkout -B ci-logs
+          if git fetch origin ci-logs 2>/dev/null; then
+            git checkout -B ci-logs FETCH_HEAD
+          else
+            git checkout -B ci-logs
+          fi
           mkdir -p ci-logs
           cp dist/build.log "ci-logs/build-${GITHUB_RUN_NUMBER}.log"
           git add -f ci-logs

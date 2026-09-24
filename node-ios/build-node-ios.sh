@@ -49,14 +49,24 @@ if [ ! -f "$TARBALL" ]; then
   curl -fsSL -o "$TARBALL" \
     "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION.tar.gz"
 fi
-# Always extract a pristine tree. The patches are anchor-checked and fail loudly
-# if an anchor is missing, so re-applying a *changed* patch over an already
-# patched tree would abort the build rather than do something quiet and wrong.
-rm -rf "$SRC"
+# Extract *over* whatever is there rather than wiping first. `out/` restored from
+# the cache is the difference between a three-hour rebuild and a few minutes:
+# tar restores the archive's own mtimes, so only the files the patches then touch
+# end up newer than their object files, and make rebuilds exactly those.
+#
+# This does mean the patches run against a tree they may already have modified,
+# so check for a leftover marker first and start over if one is there. The
+# scripts are anchor-checked and would abort on a mismatch anyway, but a stale
+# tree should not be the reason a build fails.
 mkdir -p "$WORK"
 tar xzf "$TARBALL" -C "$WORK"
 [ -d "$SRC" ] || { say "   expected $SRC after extracting the tarball"; exit 1; }
-say "   $(wc -c < "$TARBALL" | tr -d ' ') bytes, extracted to $SRC"
+if grep -q "V8_HAS_IOS_CODE_ALIAS" "$SRC/deps/v8/src/base/build_config.h" 2>/dev/null; then
+  say "   a patch marker survived the overlay; rebuilding the tree from scratch"
+  rm -rf "$SRC"
+  tar xzf "$TARBALL" -C "$WORK"
+fi
+say "   $(wc -c < "$TARBALL" | tr -d ' ') bytes, extracted over $SRC"
 
 # ---------------------------------------------------------------- 2. patches
 say "== [2/6] iOS patches"
@@ -80,24 +90,48 @@ export CXX="ccache clang++ -std=gnu++20 -arch arm64 -isysroot $SDK -miphoneos-ve
 export CC_host="ccache clang"
 export CXX_host="ccache clang++ -std=gnu++20"
 export LDFLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=$IOS_MIN"
-export GYP_DEFINES="target_arch=arm64 host_arch=arm64 host_os=mac target_os=ios"
+# host_arch has to describe the machine doing the build, not the target. Getting
+# this wrong on an Intel runner (hardcoding arm64, as the reference workflow
+# does for its arm64 runner) builds host tools for the wrong architecture.
+case "$(uname -m)" in
+  arm64) HOST_ARCH=arm64 ;;
+  x86_64) HOST_ARCH=x64 ;;
+  *) HOST_ARCH="$(uname -m)" ;;
+esac
+export GYP_DEFINES="target_arch=arm64 host_arch=$HOST_ARCH host_os=mac target_os=ios"
+say "   host arch: $HOST_ARCH"
 # --with-intl=small-icu is not optional: DSH's plugin chain uses Unicode property
 # escapes (\p{...}) in hundreds of places and they throw without ICU data.
 # --without-node-snapshot avoids running mksnapshot, which is a cross-compile
 # complication and a large memory consumer for no benefit here.
-python3 configure \
-  --dest-os=ios --dest-cpu=arm64 --cross-compiling \
-  --with-intl=small-icu --without-npm \
-  --without-node-snapshot --without-node-code-cache --without-inspector \
-  --openssl-no-asm
+#
+# Skipped when a configured tree came back from the cache. The one case that
+# needs a fresh configure is a patch that changes a gyp file: the build files in
+# out/ would then be stale. Bump CACHE_REV in the workflow when that happens.
+if [ -f "$SRC/out/Release/Makefile" ]; then
+  say "   reusing the configured tree restored from cache (out/Release exists)"
+else
+  python3 configure \
+    --dest-os=ios --dest-cpu=arm64 --cross-compiling \
+    --with-intl=small-icu --without-npm \
+    --without-node-snapshot --without-node-code-cache --without-inspector \
+    --openssl-no-asm
+fi
 
 # ---------------------------------------------------------------- 4. build
-say "== [4/6] build (make -j2)"
-# -j2 on purpose. The patches touch build_config.h, which every V8 translation
-# unit includes, so a first build is a full rebuild; three concurrent cold -O3
-# V8 compiles have OOM-killed the 3-core runner with a silent SIGKILL and no
-# clang diagnostic at all.
-if ! make -j2 > "$LOG" 2>&1; then
+# Parallelism from the machine, not from a guess. The constraint is memory, not
+# cores: a cold -O3 V8 translation unit peaks at roughly 2.5-3.5 GB, and the
+# 3-core/7 GB standard macOS runner gets OOM-killed (silent SIGKILL, no clang
+# diagnostic) at -j3. The Intel standard runner has twice the RAM, so it can
+# take -j3 or -j4.
+CORES=$(sysctl -n hw.ncpu 2>/dev/null || echo 2)
+RAM_GB=$(echo "$(sysctl -n hw.memsize 2>/dev/null || echo 4294967296) / 1073741824" | bc)
+BY_RAM=$(( RAM_GB / 3 ))          # ~3 GB per concurrent cold V8 TU
+JOBS="${JOBS:-$(( CORES < BY_RAM ? CORES : BY_RAM ))}"
+[ "$JOBS" -lt 2 ] && JOBS=2
+[ "$JOBS" -gt 8 ] && JOBS=8
+say "== [4/6] build (make -j$JOBS on $CORES cores / ${RAM_GB} GB)"
+if ! make -j"$JOBS" > "$LOG" 2>&1; then
   say "   BUILD FAILED. Errors:"
   grep -nE "error:|fatal error|Error [0-9]|ld: |Undefined symbols|clang: error" "$LOG" \
     | grep -viE "no newline|Wnewline-eof|#warning|_GLIBCXX" | tail -60
