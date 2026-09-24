@@ -91,9 +91,9 @@ DARWIN_IMPL = r'''
 // execution. See 03-fix-wx-alias.py for the on-device evidence behind this.
 namespace {
 struct CodeAliasRange {
-  Address writable;
+  uintptr_t writable;
   size_t size;
-  Address executable;
+  uintptr_t executable;
 };
 
 // The JS code range plus one range per wasm code space. Writes are not the hot
@@ -143,12 +143,12 @@ V8_BASE_EXPORT void RegisterCodeAlias(void* writable, size_t size,
                                       void* executable) {
   CHECK_LT(g_code_alias_count, kMaxCodeAliasRanges);
   g_code_alias_ranges[g_code_alias_count++] = {
-      reinterpret_cast<Address>(writable), size,
-      reinterpret_cast<Address>(executable)};
+      reinterpret_cast<uintptr_t>(writable), size,
+      reinterpret_cast<uintptr_t>(executable)};
 }
 
 namespace {
-const CodeAliasRange* FindCodeAliasRange(Address address) {
+const CodeAliasRange* FindCodeAliasRange(uintptr_t address) {
   for (int i = 0; i < g_code_alias_count; i++) {
     const CodeAliasRange& r = g_code_alias_ranges[i];
     if (address >= r.executable && address < r.executable + r.size) return &r;
@@ -157,7 +157,7 @@ const CodeAliasRange* FindCodeAliasRange(Address address) {
 }
 }  // namespace
 
-V8_BASE_EXPORT Address CodeAliasWritableAddress(Address executable_address) {
+V8_BASE_EXPORT uintptr_t CodeAliasWritableAddress(uintptr_t executable_address) {
   const CodeAliasRange* r = FindCodeAliasRange(executable_address);
   if (r == nullptr) return executable_address;
   return r->writable + (executable_address - r->executable);
@@ -165,7 +165,7 @@ V8_BASE_EXPORT Address CodeAliasWritableAddress(Address executable_address) {
 
 V8_BASE_EXPORT bool CodeAliasHandlePermissions(void* address, size_t size,
                                                OS::MemoryPermission access) {
-  const Address a = reinterpret_cast<Address>(address);
+  const uintptr_t a = reinterpret_cast<uintptr_t>(address);
   const CodeAliasRange* r = FindCodeAliasRange(a);
   if (r == nullptr) return false;
   DCHECK_LE(a + size, r->executable + r->size);
@@ -188,7 +188,7 @@ V8_BASE_EXPORT bool CodeAliasHandlePermissions(void* address, size_t size,
 }
 
 V8_BASE_EXPORT void FreeCodeAlias(void* address, size_t size) {
-  const Address a = reinterpret_cast<Address>(address);
+  const uintptr_t a = reinterpret_cast<uintptr_t>(address);
   const CodeAliasRange* found = FindCodeAliasRange(a);
   if (found == nullptr) return;
   for (int i = 0; i < g_code_alias_count; i++) {
@@ -216,7 +216,7 @@ V8_BASE_EXPORT bool ReserveWithExecutableAlias(v8::PageAllocator* allocator,
                                                void** executable);
 V8_BASE_EXPORT void RegisterCodeAlias(void* writable, size_t size,
                                       void* executable);
-V8_BASE_EXPORT Address CodeAliasWritableAddress(Address executable_address);
+V8_BASE_EXPORT uintptr_t CodeAliasWritableAddress(uintptr_t executable_address);
 V8_BASE_EXPORT bool CodeAliasHandlePermissions(void* address, size_t size,
                                                OS::MemoryPermission access);
 V8_BASE_EXPORT void FreeCodeAlias(void* address, size_t size);
@@ -525,22 +525,22 @@ def main():
           "  // executable one handed back as the space's address.\n"
           "  {\n"
           "    v8::PageAllocator* allocator = GetPlatformPageAllocator();\n"
-          "    const size_t alignment = allocator->AllocatePageSize();\n"
-          "    const size_t reservation = RoundUp(size, alignment);\n"
+          "    // Sizes arriving here are code-space sizes, already a multiple of the\n"
+          "    // allocation granularity, so no rounding is needed.\n"
           "    void* writable = nullptr;\n"
           "    void* executable = nullptr;\n"
-          "    if (::v8::base::ReserveWithExecutableAlias(allocator, reservation, &writable,\n"
+          "    if (::v8::base::ReserveWithExecutableAlias(allocator, size, &writable,\n"
           "                                               &executable)) {\n"
-          "      ::v8::base::RegisterCodeAlias(writable, reservation, executable);\n"
+          "      ::v8::base::RegisterCodeAlias(writable, size, executable);\n"
           "      return VirtualMemory(allocator,\n"
-          "                           reinterpret_cast<Address>(executable), reservation);\n"
+          "                           reinterpret_cast<Address>(executable), size);\n"
           "    }\n"
           "  }\n"
           "#endif",
           "wasm-code-manager.cc: wasm code space gets an alias",
           # marker must be text that the injection itself contains, or the patch
           # re-applies on every run (the label alone appears nowhere in the file).
-          marker="if (::v8::base::ReserveWithExecutableAlias(allocator, reservation, &writable,")
+          marker="if (::v8::base::ReserveWithExecutableAlias(allocator, size, &writable,")
 
     print(f"== done: {len(applied)} applied, {len(skipped)} already applied")
     return 0

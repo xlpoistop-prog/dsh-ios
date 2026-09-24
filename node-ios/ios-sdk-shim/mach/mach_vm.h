@@ -51,6 +51,11 @@ kern_return_t mach_vm_protect(vm_map_t target_task,
                               boolean_t set_maximum,
                               vm_prot_t new_protection);
 
+/* Also missing, and needed to drop an alias again. */
+kern_return_t mach_vm_deallocate(vm_map_t target,
+                                 mach_vm_address_t address,
+                                 mach_vm_size_t size);
+
 __END_DECLS
 
 #endif /* DSH_IOS_SDK_SHIM_MACH_VM_H_ */
