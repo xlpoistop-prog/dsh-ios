@@ -138,7 +138,22 @@ JOBS="${JOBS:-$(( CORES < BY_RAM ? CORES : BY_RAM ))}"
 [ "$JOBS" -lt 2 ] && JOBS=2
 [ "$JOBS" -gt 8 ] && JOBS=8
 say "== [4/6] build (make -j$JOBS on $CORES cores / ${RAM_GB} GB)"
-if ! make -j"$JOBS" > "$LOG" 2>&1; then
+# Record the machine in the log itself. The log is the published artefact, and
+# which machine produced a binary is part of what the binary is: the CPU model
+# answers whether a given runner label is the free 4-core standard one or the
+# billed 12-core "large" one, and the Xcode/SDK versions are what anyone
+# re-running this needs to match.
+{
+  echo "== machine that built this"
+  echo "   cpu:     $(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -p)"
+  echo "   arch:    $(uname -m)   cores: $CORES   ram: ${RAM_GB} GB"
+  echo "   make -j: $JOBS"
+  echo "   xcode:   $(xcodebuild -version 2>/dev/null | head -2 | tr '\n' ' ')"
+  echo "   ios sdk: $(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null) at $SDK"
+  echo "   node:    v$NODE_VERSION   ios min: $IOS_MIN"
+  echo
+} > "$LOG"
+if ! make -j"$JOBS" >> "$LOG" 2>&1; then
   say "   BUILD FAILED. Errors:"
   grep -nE "error:|fatal error|Error [0-9]|ld: |Undefined symbols|clang: error" "$LOG" \
     | grep -viE "no newline|Wnewline-eof|#warning|_GLIBCXX" | tail -60

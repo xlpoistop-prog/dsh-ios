@@ -39,9 +39,9 @@ on:
         required: false
         default: "24.21.0"
       runner:
-        description: "Runner label (macos-15-intel = 4 cores/14 GB, macos-14 = 3 cores/7 GB)"
+        description: "macos-14 = arm64 3 cores/7 GB (free). macos-15-intel = x64; see the note above before using it."
         required: false
-        default: "macos-15-intel"
+        default: "macos-14"
   push:
     paths:
       - "node-ios/**"
@@ -53,7 +53,20 @@ permissions:
 
 jobs:
   build:
-    runs-on: ${{ github.event.inputs.runner || 'macos-15-intel' }}
+    # macos-14 is the free arm64 runner: 3 cores, 7 GB, so the build runs at -j2.
+    #
+    # macos-15-intel is the x64 image and is *probably* also a free standard
+    # runner -- GitHub's pricing table lists a standard "macOS 3-core or 4-core
+    # (M1 or Intel)" SKU, and a billed larger runner cannot be used without being
+    # created in the organisation's settings first, which has not been done here.
+    # But the same image's other label is `macos-15-large`, which *is* the billed
+    # 12-core SKU, and nothing in the runner-images label table distinguishes
+    # them. So it is not the default: select it from the dispatch input and read
+    # machine-<run>.txt from the ci-logs branch, which the first step publishes
+    # within about a minute, to confirm which one you got before it costs
+    # anything. If it reports 4 cores, it is the free standard runner and is
+    # worth about twice the speed.
+    runs-on: ${{ github.event.inputs.runner || 'macos-14' }}
     timeout-minutes: 360
 
     env:
@@ -86,6 +99,34 @@ jobs:
           echo "clang: $(clang --version | head -1)"
           brew list ldid >/dev/null 2>&1 || brew install ldid
           brew list ccache >/dev/null 2>&1 || brew install ccache
+
+      # Publish the machine before the build, not only after it. Which runner a
+      # label actually resolves to is not documented well enough to rely on, and
+      # the difference between the free standard runner and a billed larger one
+      # should be knowable in a minute rather than after a three-hour build.
+      - name: Record the machine and publish it
+        run: |
+          set -eu
+          mkdir -p dist
+          {
+            echo "runner label: ${{ github.event.inputs.runner || 'macos-14' }}"
+            echo "cpu:          $(sysctl -n machdep.cpu.brand_string)"
+            echo "arch:         $(uname -m)"
+            echo "cores:        $(sysctl -n hw.ncpu)"
+            echo "ram:          $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
+          } | tee dist/machine.txt
+          git config user.name "dsh-ios ci"
+          git config user.email "noreply@example.com"
+          if git fetch origin ci-logs 2>/dev/null; then
+            git checkout -B ci-logs FETCH_HEAD
+          else
+            git checkout -B ci-logs
+          fi
+          mkdir -p ci-logs
+          cp dist/machine.txt "ci-logs/machine-${GITHUB_RUN_NUMBER}.txt"
+          git add -f ci-logs
+          git commit -m "machine info for run ${GITHUB_RUN_NUMBER}" || exit 0
+          git push --force origin ci-logs
 
       # The tarball, ccache, and the build tree's out/ directory. out/ is what
       # makes a repeat run fast; see the note at the top about CACHE_REV.
