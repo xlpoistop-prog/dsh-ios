@@ -61,8 +61,12 @@ jobs:
       # bumped to 2: IPHONEOS_DEPLOYMENT_TARGET is no longer exported, which
       # changes every compile command, so objects from rev 1 must not be reused
       CACHE_REV: "2"
+      # Every job-level value below uses the github context only. The runner
+      # context is not available here, and referencing it does not fail at the
+      # step -- it makes the whole workflow invalid, so the run dies with zero
+      # jobs and nothing to read. (That is how run #6 failed: runner.temp here.)
       CACHE_DIR: ${{ github.workspace }}/../node-ios-cache
-      SRC_DIR: ${{ runner.temp }}
+      SRC_DIR: ${{ github.workspace }}/../node-src
 
     steps:
       - uses: actions/checkout@v4
