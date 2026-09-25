@@ -15,12 +15,13 @@ why that distinction matters and will bite you repeatedly otherwise.
 ### Tested scope
 
 Verified against **one configuration only**: iPhone 15 (A16), **iOS 17.1.1**,
-Relaxin (rootHide), Node 22.19.0. **No other iOS version, device or jailbreak has
-been tried.** The constraints below are platform properties rather than
-version-specific quirks, so the approach should transfer — but that is reasoning,
-not evidence. Expect to re-derive details on anything else, and note that a
-**rootless** jailbreak (Dopamine and relatives) does not have the jbroot split
-described in [`jbroot-namespaces.md`](jbroot-namespaces.md) in the same form.
+Relaxin (rootHide), Node 24.21.0 with JIT. **No other iOS version, device or
+jailbreak has been tried.** The constraints below are platform properties rather
+than version-specific quirks, so the approach should transfer — but that is
+reasoning, not evidence. Expect to re-derive details on anything else, and note
+that a **rootless** jailbreak (Dopamine and relatives) does not have the jbroot
+split described in [`jbroot-namespaces.md`](jbroot-namespaces.md) in the same
+form. Earlier verification was on Node 22.19.0, before this port had JIT.
 
 ### What you need
 

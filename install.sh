@@ -25,11 +25,21 @@ set -eu
 LC_ALL=C
 export LC_ALL
 
-# --jitless is mandatory on this platform, and its absence does not produce a
-# useful error: V8's code generator faults on iOS and the process dies with
-# SIGBUS, so the shell prints only "Bus error: 10". start.sh exports this for the
-# server; install.sh calls node itself (the Mach-O patcher) and did not, which is
-# why step 6 failed with no explanation at all.
+# node is invoked here for one-shot work (version checks, the Mach-O patcher).
+# This used to say --jitless was mandatory on this platform, which was true of
+# every iOS build until this port grew its own: V8's code generator faulted and
+# the process died with only "Bus error: 10" to show for it. It is kept because a
+# build that cannot JIT still needs it, and because install.sh is exactly the
+# script that may be run before the new node is in place.
+#
+# It is exported, deliberately: everything this script runs is one-shot work, and
+# a build that cannot JIT needs the flag. What it must not do is decide for the
+# *server*. start.sh strips --jitless from an inherited NODE_OPTIONS for exactly
+# that reason, so the value here cannot leak into a long-running process -- but
+# that is a downstream guard, not a licence to set it upstream. The class of
+# mistake is worth naming: start.sh itself used to `export NODE_OPTIONS=--jitless`
+# unconditionally, which left the server a pure interpreter while every isolated
+# JIT test passed. See docs/ios-constraints.md §16.
 case " ${NODE_OPTIONS:-} " in
   *" --jitless "*) : ;;
   *) NODE_OPTIONS="${NODE_OPTIONS:-} --jitless"; export NODE_OPTIONS ;;
