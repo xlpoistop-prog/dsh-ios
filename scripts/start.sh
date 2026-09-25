@@ -16,8 +16,23 @@
 #   * no ps, no pkill, no curl on this device. Process management is the pidfile
 #     plus killall, and readiness is polled from the log.
 #
-#   * --jitless is mandatory (V8 codegen faults on iOS), which is why the
-#     WebAssembly polyfill is imported before anything else can need it.
+#   * JIT works on this device. It did not before, and the reason was not the
+#     kernel: V8's build_config.h only defines V8_HAS_PTHREAD_JIT_WRITE_PROTECT
+#     for macOS, so on iOS the W^X hook had no implementation, V8's
+#     RwxMemoryWriteScope compiled to a no-op, and code pages were never made
+#     executable. node-ios/patches/04 implements that hook with mprotect and 05
+#     repairs a page on the fault, so JIT now runs. Measured on this device:
+#     20M-iteration loop ~1060 ms -> ~300 ms, cold boot to token 45 s -> 17 s.
+#
+#     The trap that hid it for so long: NODE_OPTIONS is equivalent to the command
+#     line, so an `export NODE_OPTIONS=--jitless` here kept the server a pure
+#     interpreter even after --jitless was dropped from argv. Diagnose from
+#     `env | grep NODE_OPTIONS`, never from the process command line.
+#     DSH_JITLESS=1 restores the old behaviour if codegen ever faults again.
+#
+#     The WebAssembly polyfill is still imported below: with JIT, native
+#     WebAssembly exists and the polyfill's whole body is skipped; under
+#     DSH_JITLESS=1 it becomes necessary again.
 #
 #   * glob/grep no longer spawn a helper: the tool calls a JS ripgrep
 #     implementation in-process, so no PATH/shebang concerns apply to it.
@@ -67,7 +82,32 @@ fi
 cd "$BASE" || exit 1
 
 # Relative on purpose: node resolves these against its own (real) cwd.
-export NODE_OPTIONS=--jitless
+#
+# NODE_OPTIONS is equivalent to the command line, so anything left set here
+# silently downgrades the engine — which is exactly what happened: --jitless had
+# been removed from argv, but this line stayed, and the server kept running as a
+# pure interpreter while every JIT test passed. Diagnose with
+# `env | grep NODE_OPTIONS`, not with the process command line.
+#
+# Stripped POSIX-safely rather than with ${NODE_OPTIONS//--jitless/}: /bin/sh on
+# this device is dash, which has no such expansion and fails at expansion time
+# with "Bad substitution" — a failure `sh -n` does not catch. Only --jitless is
+# removed, so memory flags someone may have set survive; an unconditional
+# `unset NODE_OPTIONS` would be correct on this particular device (where
+# --jitless is the only value that variable has ever held) but wrong anywhere
+# else.
+_dsn=""
+for _w in ${NODE_OPTIONS:-}; do
+  [ "$_w" = "--jitless" ] && continue
+  _dsn="${_dsn}${_dsn:+ }$_w"
+done
+if [ "${DSH_JITLESS:-0}" = "1" ]; then
+  NODE_OPTIONS="--jitless${_dsn:+ $_dsn}"
+else
+  NODE_OPTIONS="$_dsn"
+fi
+export NODE_OPTIONS
+unset _dsn _w
 export DSH_HOME=./dsh-home
 export DSH_PERMISSION_MODE=danger-full-access
 # jbroot's bin directories carry the jailbreak's userland (tar, sed, ...).

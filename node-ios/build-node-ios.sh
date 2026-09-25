@@ -17,12 +17,22 @@
 #   entitlements.plist                      a copy of the entitlements it was signed with
 #   build.log                               the full build output
 #
-# The two fixes in patches/ are what make this build different from the published
-# recipes; both are described at length in the patch files themselves. In short:
-# 02 makes V8's wasm decisions agree instead of requiring the launcher to pass
-# --wasm-enforce-bounds-checks, and 03 maps the code space twice instead of
-# flipping protection on one mapping, so JIT no longer needs --predictable
-# --single-threaded and no longer aborts.
+# The patches in patches/ are what make this build different from the published
+# recipes; each is described at length in its own file. In short:
+#   01 the base port: gyp/toolchain conditions so an iOS target is actually built
+#      as iOS (see the GYP_DEFINES note below -- it needs OS=ios to take effect)
+#   02 makes V8's wasm decisions agree instead of requiring the launcher to pass
+#      --wasm-enforce-bounds-checks
+#   04 implements V8's W^X write-protect hook for iOS, and 05 repairs a code page
+#      on the fault. These replace an earlier approach (03, kept for the record)
+#      that mapped the code space twice and claimed to remove the need for
+#      --jitless; measurement showed the second mapping is incompatible with
+#      V8's memory layout -- the heap writes page headers into pages that must
+#      also be executable -- and the build still faulted.
+#
+# With 04+05, JIT runs: measured on the device, a 20M-iteration loop went from
+# ~1060 ms (--jitless) to ~300 ms, and cold boot to first token from 45 s to 17 s.
+# scripts/start.sh therefore no longer exports --jitless; DSH_JITLESS=1 restores it.
 set -eu
 
 NODE_VERSION="${NODE_VERSION:-24.21.0}"
@@ -72,7 +82,18 @@ say "   $(wc -c < "$TARBALL" | tr -d ' ') bytes, extracted over $SRC"
 say "== [2/6] iOS patches"
 python3 "$HERE/patches/01-ios-base.py" "$SRC"
 python3 "$HERE/patches/02-fix-trap-handler.py" "$SRC"
-python3 "$HERE/patches/03-fix-wx-alias.py" "$SRC"
+# 03 is deliberately NOT applied. Its double mapping is incompatible with V8's
+# memory layout -- the heap writes page headers into pages that must also be
+# executable -- and the resulting build still faults. It is kept in the tree for
+# the record, not for use.
+# python3 "$HERE/patches/03-fix-wx-alias.py" "$SRC"
+#
+# TODO(node-ios-jit): 04 (implement V8's W^X hook for iOS with mprotect) and 05
+# (repair a code page on the fault, then retry) are what make JIT run. They are
+# written and measured -- see docs/ and the branch notes -- but not yet ported
+# into patches/ as anchor-checked scripts, so they are not applied here and this
+# build still needs --jitless. Until they land, scripts/start.sh's DSH_JITLESS=1
+# is the only correct setting.
 
 # ---------------------------------------------------------------- 3. configure
 say "== [3/6] configure for iphoneos-arm64, min iOS $IOS_MIN"
@@ -105,7 +126,16 @@ case "$(uname -m)" in
   x86_64) HOST_ARCH=x64 ;;
   *) HOST_ARCH="$(uname -m)" ;;
 esac
-export GYP_DEFINES="target_arch=arm64 host_arch=$HOST_ARCH host_os=mac target_os=ios"
+# OS=ios is not optional and it is not implied by --dest-os=ios: gyp also reads
+# GYP_DEFINES from the environment, and the environment wins. Without it gyp
+# evaluates OS as the *build host* -- "mac" here, "linux" on the Linux path --
+# every OS=="ios" condition in node and v8 silently fails, and the build dies
+# later with Linux headers pulled into the iOS target (deps/zlib's
+# <asm/hwcap.h>, cares' <sys/random.h>) or links host tools against target
+# symbols. This one word was the root cause of that entire error family, and it
+# is why the iOS-only branches in patches 01 and 04 were dead code until it was
+# added.
+export GYP_DEFINES="OS=ios target_arch=arm64 host_arch=$HOST_ARCH host_os=${HOST_OS:-mac} target_os=ios"
 say "   host arch: $HOST_ARCH"
 # --with-intl=small-icu is not optional: DSH's plugin chain uses Unicode property
 # escapes (\p{...}) in hundreds of places and they throw without ICU data.
