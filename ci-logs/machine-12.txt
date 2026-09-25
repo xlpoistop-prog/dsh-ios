@@ -1,0 +1,5 @@
+runner label: macos-14
+cpu:          Apple M1 (Virtual)
+arch:         arm64
+cores:        3
+ram:          7 GB
