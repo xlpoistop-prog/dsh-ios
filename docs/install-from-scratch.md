@@ -118,20 +118,20 @@ Confirm JIT is actually on rather than assumed — the engine reports it:
 # non-zero, and not just the "interpreted" bit, means Turbofan/Maglev ran
 ```
 
-That build is MIT-licensed, and its maintainer describes it as *"the first public
-Node >=20 build for iOS"*. Its own release notes recommend the same flag this
-port depends on — `Run with --jitless` — which is worth knowing: **`--jitless` is
-not a workaround invented here.** It is the intended usage of the only public
-Node build for this platform.
+That binary is Node.js, MIT-licensed (OpenJS Foundation and Node.js
+contributors). Two things about it are worth knowing:
 
-Two things to know:
-
-* **`--jitless` is mandatory** with this build. Without it you get `SIGBUS` on
-  the first JS execution. There is nothing to configure; it is not a
-  JIT-capable build on this OS.
+* **Do not pass `--jitless`.** It is valid, and it will run, but it disables the
+  JIT this build went to some trouble to provide — expect roughly an order of
+  magnitude more CPU for the same work. `DSH_JITLESS=1 sh scripts/start.sh` is the
+  deliberate way to fall back.
 * `process.platform` is **`ios`**, not `darwin`. Anything that derives a package
   name or a path from `process.platform` will look for a package that does not
   exist. That is why `rg-ios/` and `sharp-ios/` exist.
+
+Route B below describes the earlier situation, when the only available build was
+someone else's and `--jitless` genuinely was mandatory. It is kept because the
+reasoning is still instructive.
 
 ### Route B — build it yourself
 
@@ -277,6 +277,7 @@ Almost always a mounted agent preset failing, not a path problem. Check the
 server log with the `tools/diag-overlay.js` banner installed — see
 [`ios-constraints.md`](ios-constraints.md) §12 and §15.
 
-**Everything is slow.** Expected. `--jitless` interprets; there is no
-optimising compiler. Prefer starting a fresh session over continuing a very long
-one, and expect the first seconds after launch to be busy.
+**Startup is slow, but it is no longer interpreted.** Cold boot to the first token
+is about 17 s on the test device with JIT (it was about 45 s under `--jitless`).
+Prefer starting a fresh session over continuing a very long one, and expect the
+first seconds after launch to be busy.

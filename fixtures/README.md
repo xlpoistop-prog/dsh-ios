@@ -6,10 +6,14 @@ rather than against itself.
 
 ```sh
 # after install.sh, from the repo root
-node --jitless fixtures/verify-image-codec.mjs
+node fixtures/verify-image-codec.mjs
 # or point it at the installed codec
-node --jitless fixtures/verify-image-codec.mjs /path/to/dsh/node_modules/sharp/dist/ios
+node fixtures/verify-image-codec.mjs /path/to/dsh/node_modules/sharp/dist/ios
 ```
+
+These ran under `node --jitless` before JIT worked on iOS. The flag is still
+valid, so adding it back changes nothing about correctness — it is just slower,
+which matters when the point is to check a codec that exists to make images fast.
 
 ## Why recorded truth, and not just "it decoded"
 

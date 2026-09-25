@@ -116,14 +116,16 @@ Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
 │  dsh                                        │
 │    插件树 · agent loop · 工具               │
 ├─────────────────────────────────────────────┤
-│  Node 22（现成的 iphoneos-arm64 构建）      │
-│    --jitless · 预加载 JS 垫片               │
+│  Node 24（由 node-ios/ 构建，带 JIT）       │
+│    JIT · 预加载 JS 垫片                     │
 ├─────────────────────────────────────────────┤
 │  iOS 17 / 已越狱                            │
 └─────────────────────────────────────────────┘
 ```
 
-实测环境：**iPhone 15（A16）、iOS 17.1.1、Relaxin（rootHide）**，**Node 22.19.0**。
+实测环境：**iPhone 15（A16）、iOS 17.1.1、Relaxin（rootHide）**，**Node 24.21.0**，
+并且 **V8 的 JIT 真的在跑**（实测：2000 万次循环约 300 ms，而 `--jitless` 下约 1060 ms；
+冷启动到出 token 17 秒，而 `--jitless` 下 45 秒）。
 
 <table>
 <tr>
@@ -148,10 +150,10 @@ Sileo 里的 **`openssh-server`**、以及 `ldid` + `tar`。
 | 手机 | iPhone 15（A16） |
 | iOS | **只有 17.1.1** |
 | 越狱 | Relaxin（rootHide） |
-| Node | 22.19.0（`iphoneos-arm64`） |
+| Node | 24.21.0，由 [`node-ios/`](node-ios/) 构建 |
 
 这个移植依赖的机制 —— jbroot 命名空间分裂、原生模块的 `mmap` 限制、
-`--jitless` 的行为、没有 `gzip` —— 都是**平台性质**，不是某个 iOS 版本特有的，
+JIT 的行为、没有 `gzip` —— 都是**平台性质**，不是某个 iOS 版本特有的，
 所以**思路**应该能迁移过去。**但那是推理，不是证据。**
 
 换 iOS 版本、换手机、换越狱工具，就要**重新验证细节**。
@@ -256,7 +258,7 @@ PLINK=/path/to/plink PSCP=/path/to/pscp ./bootstrap.sh --device ...
 
 ### 已经装好 Node + DSH？只做适配
 
-前置：**已越狱**手机，且已有 **Node 22**、`ldid`、`tar`。
+前置：**已越狱**手机，且已有 **Node**（v24.21.0，带 JIT —— 见 [`node-ios/`](node-ios/)）、`ldid`、`tar`。
 
 ```sh
 git clone https://github.com/XLPOISTOP-prog/dsh-ios.git
@@ -348,8 +350,8 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 | | 本项目 | 交叉编译移植 |
 |---|---|---|
 | 编译工具链 | 安装本身**不需要**；原生图片加速用**手机上的**编译器（越狱自带的 `clang`），**从不需要 Mac** | macOS + Xcode（+ CI） |
-| JIT | 无（`--jitless`） | **有** |
-| Node | 现成 `iphoneos-arm64` 构建 | 自建 + V8 W^X 补丁 |
+| JIT | **有** —— 给 iOS 实现了 V8 的 W^X 钩子，外加故障时修页；见 [`node-ios/`](node-ios/) | **有**（V8 W^X 补丁） |
+| Node | 由 [`node-ios/`](node-ios/) 自建，并在本仓库的 release 里发布 | 自建 + V8 W^X 补丁 |
 | `node-pty` | macOS prebuild，改一个字节 | 为 iOS 编译 |
 | ICU / Unicode 正则 | 取决于构建 | small-icu，`\p{...}` 可用 |
 | 图片（`sharp`） | **纯 JS 编解码器（可用）** | shim（文档中标为不可用） |
@@ -377,10 +379,8 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 
 | 限制 | 原因 |
 |---|---|
-| 无 JIT | `--jitless`；同样工作量大约要**多一个数量级**的 CPU |
-| 无 WebAssembly | 被 stub；依赖 wasm 的库跑不了 |
+| `worker_threads` | 在 JIT 下不可靠：W^X 的实现是 `mprotect`，它是**全进程**的，而被它替代的那个 macOS API 是**按线程**的。回退用 `DSH_JITLESS=1` |
 | 沙箱 / FFI 子进程 | `koffi` 没有 iOS 构建；已替身 |
-| `worker_threads` | 这套 flag 下不可用 |
 | 原生 npm addon | 需要 iOS 构建；DSH 依赖的那两个已特殊处理 |
 
 ---
@@ -426,7 +426,7 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 
 | 坑 | 实际发生了什么 |
 |---|---|
-| **没有 JIT，因而也没有 WebAssembly** | undici（Node 的 `fetch`）在**导入时**就用 WebAssembly 编译它的 HTTP 解析器 —— 所以 **`fetch` 根本加载不起来**。 |
+| **`fetch` 曾经根本加载不起来** | JIT 现在能跑了，原生 WebAssembly 也回来了，下面那条前提已经不成立。undici 在**导入时**就用 WebAssembly 编译它的 HTTP 解析器，`--jitless` 下那个导入会抛。<br>**有 JIT 之后这件事需要重测，不能想当然** —— 当初的失败从来不是 undici 的问题，是引擎的。 |
 | **给 `globalThis.fetch` 赋值会触发 undici 加载** | 这个全局量是**懒加载 getter**，赋值前的「读」才是触发导入和崩溃的那一步。<br>要用 `Object.defineProperty` **定义**它，而不是赋值。实测手机上**两个 preload 按顺序都要**。 |
 | **ripgrep 既无法 spawn，包也不存在** | `ripgrep-ios-arm64` **从未发布**；`darwin-arm64` 构建链接了 iOS 没有的 `libiconv.2.dylib`。<br>改用**纯 JS 实现 + 进程内调用**。 |
 | **`sharp` 在 iOS 上没有可行路径** | 没有 iOS 版 libvips。<br>改用**纯 JS 编解码器** —— 而这恰好是另一个交叉编译移植**明确列为不可用**的能力。 |
@@ -439,15 +439,27 @@ DSH_SAFE=1 sh scripts/start.sh  # 不杀无关 node 进程
 下面每一条都是**承重的**。推理过程和**试过但失败的路**都在
 [`docs/ios-constraints.md`](docs/ios-constraints.md)。
 
-### 无 JIT 的 V8，以及 `fetch`
+### WebAssembly，以及 `fetch`
 
-`--jitless` 意味着没有 WebAssembly，而 Node 的 `fetch` 是 undici —— 它的 HTTP 解析器是
-**在导入时**编译的 WebAssembly 模块。所以 **`fetch` 根本加载不起来**。
+这一节原来叫「无 JIT 的 V8，以及 `fetch`」，原来写的是 `fetch` 根本加载不起来：
+Node 的 `fetch` 是 undici —— 它的 HTTP 解析器是**在导入时**编译的 WebAssembly 模块，
+而 `--jitless` 下根本没有 WebAssembly 可用。
 
-两个 preload，按顺序：
+JIT 现在能跑了（见 [`node-ios/`](node-ios/)），所以原生 WebAssembly 回来了，
+那个前提也就不存在了。下面这两个 preload **仍然随包发布**，而且在
+`DSH_JITLESS=1` 下仍然正确：
 
-1. **`preload/wasm-polyfill.js`** —— 提供 `WebAssembly` 全局量，让 undici 能导入完
-2. **`preload/fetch-https-shim.js`** —— 用 `node:http`/`node:https`（原生解析器）**替换整个 `globalThis.fetch`**
+1. **`preload/wasm-polyfill.js`** —— 提供 `WebAssembly` 全局量，让 undici 能导入完。
+   有 JIT 时这个全局量本来就在，所以整个文件被跳过：它整段包在
+   `typeof WebAssembly === "undefined"` 判断里，不需要时**零开销**。
+2. **`preload/fetch-https-shim.js`** —— 用 `node:http`/`node:https`（原生解析器）
+   **替换整个 `globalThis.fetch`**
+
+**shim 在 JIT 下仍然必需 —— 这是实测的，不是推出来的。** 有 JIT、不加载任何
+preload 时，裸调 `fetch("https://example.com")` 依然**直接 `Bus error: 10`**；
+而同样一次调用加上这两个 preload，在手机上返回 **status 200**。
+polyfill 自己的判断让它在 WebAssembly 已存在时零成本，
+所以这两个留着不花任何代价，而且**它们才是真正能用的那条路**。
 
 **两个都需要。** 注意 shim 是用 `Object.defineProperty` 安装的，不是赋值 ——
 `globalThis.fetch = …` 会触发 Node 的懒加载 getter，进而加载 undici，那就是崩溃点。
