@@ -142,15 +142,17 @@ it transfers to your setup.
 │  dsh                                       │
 │    plugins · agent loop · tools             │
 ├─────────────────────────────────────────────┤
-│  Node 22 (stock iphoneos-arm64 build)       │
-│    --jitless · preloaded JS shims           │
+│  Node 24 (built from node-ios/, JIT)        │
+│    JIT · preloaded JS shims                 │
 ├─────────────────────────────────────────────┤
 │  iOS 17 / jailbroken                        │
 └─────────────────────────────────────────────┘
 ```
 
 Verified on **iPhone 15 (A16), iOS 17.1.1, Relaxin (rootHide)** with
-**Node 22.19.0**.
+**Node 24.21.0** and V8's JIT running (measured: a 20M-iteration loop in ~300 ms
+rather than ~1060 ms under `--jitless`, and cold boot to first token in 17 s
+rather than 45 s).
 
 <table>
 <tr>
@@ -177,7 +179,7 @@ been tried:
 | Device | iPhone 15 (A16) |
 | iOS | **17.1.1 — and nothing else** |
 | Jailbreak | Relaxin (rootHide) |
-| Node | 22.19.0 (`iphoneos-arm64`) |
+| Node | 24.21.0, built from [`node-ios/`](node-ios/) |
 
 The mechanisms this port depends on — the jbroot namespace split, the `mmap`
 restriction on native modules, `--jitless` behaviour, the absent `gzip` — are
@@ -413,8 +415,8 @@ That constraint is the whole design:
 | | This port | Cross-compiled port |
 |---|---|---|
 | Build toolchain | **none** for the install — and for the native accelerator, a compiler *on the phone* (`clang` from the jailbreak), never a Mac | macOS + Xcode (+ CI) |
-| JIT | no (`--jitless`) | **yes** |
-| Node | stock `iphoneos-arm64` build | custom build, V8 W^X patch |
+| JIT | **yes** — V8's W^X hook implemented for iOS, plus repair-on-fault; see [`node-ios/`](node-ios/) | **yes** (V8 W^X patch) |
+| Node | custom build from [`node-ios/`](node-ios/), published in this repo's releases | custom build, V8 W^X patch |
 | `node-pty` | macOS prebuild, one byte rewritten | compiled for iOS |
 | ICU / Unicode regex | depends on the build | small-icu, `\p{...}` works |
 | Images (`sharp`) | **pure-JS codec (works)** | shim (stated unavailable) |
@@ -442,10 +444,8 @@ them are in [`docs/ios-constraints.md`](docs/ios-constraints.md).
 
 | Limitation | Why |
 |---|---|
-| No JIT | `--jitless`; expect an order of magnitude more CPU per unit of work |
-| No WebAssembly | stubbed out; libraries built on wasm will not run |
+| `worker_threads` | unreliable under JIT: the W^X implementation is `mprotect`, which is process-wide while the macOS API it replaces is per-thread. `DSH_JITLESS=1` is the fallback |
 | Sandboxing / FFI subprocess | `koffi` has no iOS build; stubbed |
-| `worker_threads` | unavailable under the flags this build needs |
 | Native npm addons | need an iOS build; the two DSH requires are handled specially |
 
 ---
@@ -490,7 +490,7 @@ before debugging anything on this platform.**
 
 | Pitfall | What actually happens |
 |---|---|
-| **No JIT, and therefore no WebAssembly** | Undici — Node's `fetch` — compiles its HTTP parser from WebAssembly *at import*, so `fetch` cannot be loaded at all. |
+| **`fetch` used to be unloadable** | With JIT, native WebAssembly is available again and the premise below no longer holds. Undici compiles its HTTP parser from WebAssembly *at import*, so under `--jitless` the import threw. **With JIT this needs re-testing rather than assuming either way** — the failure was never undici's, it was the engine's. |
 | **Assigning `globalThis.fetch` loads undici** | The global is a lazy getter; the read-before-write is what triggers the import and the crash. Define the property instead. On the device tested, both preloads in order were needed. |
 | **Ripgrep cannot be spawned, and its package does not exist** | `ripgrep-ios-arm64` is never published, and the `darwin-arm64` build links `libiconv.2.dylib`. Replaced with a pure-JS implementation called **in-process**. |
 | **`sharp` has no path to working on iOS** | No iOS libvips. Replaced with a pure-JS codec — and this is the one capability a cross-compiled port reports as unavailable. |
@@ -503,18 +503,29 @@ before debugging anything on this platform.**
 Everything below is load-bearing; the reasoning and the things that did *not*
 work are in [`docs/ios-constraints.md`](docs/ios-constraints.md).
 
-### V8 without JIT, and `fetch`
+### WebAssembly, and `fetch`
 
-`--jitless` means no WebAssembly, and Node's `fetch` is undici, whose HTTP
-parser is a WebAssembly module compiled **at import**. So `fetch` cannot be
-loaded at all.
+This section used to be titled "V8 without JIT, and `fetch`", and it used to say
+that `fetch` could not be loaded at all: Node's `fetch` is undici, whose HTTP
+parser is a WebAssembly module compiled **at import**, and under `--jitless`
+there was no WebAssembly to compile it with.
 
-Two preloads, in order:
+JIT now runs (see [`node-ios/`](node-ios/)), so native WebAssembly is back and
+that premise is gone. The two preloads below are still shipped, and still correct
+for `DSH_JITLESS=1`:
 
 1. **`preload/wasm-polyfill.js`** — supplies a `WebAssembly` global so undici can
-   finish importing.
+   finish importing. With JIT the global already exists, and the whole file is
+   skipped: it is wrapped in a `typeof WebAssembly === "undefined"` guard, so it
+   costs nothing when it is not needed.
 2. **`preload/fetch-https-shim.js`** — replaces `globalThis.fetch` with an
    implementation over `node:http`/`node:https`, using the native parser.
+
+**The shim is still required under JIT — measured, not assumed.** With JIT and no
+preloads, a bare `fetch("https://example.com")` still dies with `Bus error: 10`.
+With both preloads, the same call returns **status 200** on the device. The
+polyfill's own guard makes it free when WebAssembly already exists, so the pair
+costs nothing to keep and is what actually works.
 
 Both are needed. Note the shim installs via `Object.defineProperty`, not
 assignment — `globalThis.fetch = …` triggers Node's lazy getter, which loads
