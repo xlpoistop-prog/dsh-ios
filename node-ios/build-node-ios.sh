@@ -87,13 +87,8 @@ python3 "$HERE/patches/02-fix-trap-handler.py" "$SRC"
 # executable -- and the resulting build still faults. It is kept in the tree for
 # the record, not for use.
 # python3 "$HERE/patches/03-fix-wx-alias.py" "$SRC"
-#
-# TODO(node-ios-jit): 04 (implement V8's W^X hook for iOS with mprotect) and 05
-# (repair a code page on the fault, then retry) are what make JIT run. They are
-# written and measured -- see docs/ and the branch notes -- but not yet ported
-# into patches/ as anchor-checked scripts, so they are not applied here and this
-# build still needs --jitless. Until they land, scripts/start.sh's DSH_JITLESS=1
-# is the only correct setting.
+python3 "$HERE/patches/04-ios-jit-wx-hook.py" "$SRC"
+python3 "$HERE/patches/05-ios-jit-fault-repair.py" "$SRC"
 
 # ---------------------------------------------------------------- 3. configure
 say "== [3/6] configure for iphoneos-arm64, min iOS $IOS_MIN"
