@@ -126,7 +126,7 @@ Deliberately absent from this repository. `install.sh` and `npm` obtain them.
 
 | Component | License | Where it comes from | Why not here |
 |---|---|---|---|
-| **Node.js** (iOS `iphoneos-arm64` build) | **MIT** — [`j0shua-SYSON/node-ios`](https://github.com/j0shua-SYSON/node-ios) | [release `v22.19.0`](https://github.com/j0shua-SYSON/node-ios/releases/tag/v22.19.0) | 71 MB binary; fetch and verify it rather than vendoring it |
+| **Node.js** (iOS `iphoneos-arm64` build) | **MIT** — Node.js / OpenJS Foundation; built here from [`node-ios/`](node-ios/) | [release `node-ios-v24.21.0-jit`](https://github.com/XLPOISTOP-prog/dsh-ios/releases/tag/node-ios-v24.21.0-jit) | 76 MB binary; fetch and verify it rather than vendoring it |
 | **DSH** and the `@deepseek-ai/*` tree | MIT | `npm install @deepseek-ai/dsh` | ~265 MB of dependencies; `npm` already does this |
 | **`sharp`** + `@img/colour` | Apache-2.0 / MIT | npm | obtained by `npm install` |
 | **`@vscode/ripgrep`** | MIT | npm | **not used** — `rg-ios/` replaces it, so its platform binaries never need to exist |
@@ -138,27 +138,38 @@ Nothing under `node_modules/` is committed. `.gitignore` enforces this.
 
 ### The Node build, specifically
 
-This port was developed against exactly one Node build, and its provenance is
-pinned by checksum so it can be re-obtained rather than trusted:
+This port builds its own Node from [`node-ios/`](node-ios/) and publishes it as a
+release in this repository, so its provenance is a build recipe and a checksum
+rather than someone else's binary:
 
 ```
-source   https://github.com/j0shua-SYSON/node-ios/releases/download/v22.19.0/node-v22.19.0-iphoneos-arm64
-size     74,851,216 bytes
-sha256   1f0975217902badb1919b6d6f5dfd9e1083e765f090766dab6d50f562044fbcc
-license  MIT (Copyright (c) 2026 j0shua-SYSON)
+source   https://github.com/XLPOISTOP-prog/dsh-ios/releases/download/node-ios-v24.21.0-jit/node-v24.21.0-iphoneos-arm64
+size     79,707,248 bytes
+sha256   c3d667b8c4385086c150b7f495a5f8ded2e585be96b6bbd4b85f8df82c28bb62
+license  MIT (Node.js; Copyright OpenJS Foundation and Node.js contributors)
+         The build recipe under node-ios/ is this project's, MIT, same as the rest.
 ```
 
+The `entitlements.plist` it is signed with is this repository's own,
+[`node-ios/entitlements.plist`](node-ios/entitlements.plist):
+
 ```
-source   https://github.com/j0shua-SYSON/node-ios/releases/download/v22.19.0/entitlements.plist
-size     362 bytes
-sha256   d7bca5deecd3bad89d7c0bb92db4fd4d83f817a7dfcb90bd84bef18f410b5983
+size     1297 bytes
+sha256   49932c37fcf9081392f85c80995dc9865482b7cf395430ce74b7718f168454a6
 ```
 
-Both checksums were verified against the files used to build and test this port;
-the `entitlements.plist` in this repo is that exact file.
+**Upgrading from an earlier install.** Up to and including `v22.19.0` this port
+fetched the Node binary from [`j0shua-SYSON/node-ios`](https://github.com/j0shua-SYSON/node-ios),
+which has no JIT and **must** be run with `--jitless`. `scripts/start.sh` no
+longer sets that flag. If your install still has the old binary, either re-run
+`bootstrap.sh` (which fetches the build above) or start with `DSH_JITLESS=1 sh
+scripts/start.sh` until you do.
 
-That project describes itself as *"the first public Node >=20 build for iOS"*,
-and its own release notes recommend the same flag this port depends on:
+That project is still credited — it describes itself as *"the first public Node
+>=20 build for iOS"*, it is what this port ran on for most of its life, and its
+release notes recommending `--jitless` were **correct for that build**: V8 could
+not JIT on iOS. That is what this port has since fixed; see
+[`node-ios/README.md`](node-ios/README.md).
 
 > Run with `--jitless`. Validated on iPhone 6s Plus / iOS 15.8.5 / Dopamine.
 

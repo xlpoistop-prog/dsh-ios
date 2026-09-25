@@ -612,9 +612,11 @@ docs/                       三份长文设计笔记
 * [Cordis](https://github.com/cordiverse/cordis) —— DSH 的插件框架
 * **[`j0shua-SYSON/node-ios`](https://github.com/j0shua-SYSON/node-ios)**（MIT）——
   **没有它就没有这个移植。** 项目自述是「the first public Node >=20 build for iOS」，
-  也正是本项目构建和测试所基于的 Node。它的 release 说明里推荐的
-  **正好就是我们依赖的 `--jitless`** —— 这点值得知道：
-  **那个 flag 不是本项目发明的权宜之计，而是这个平台唯一公开构建的预期用法。**
+  也正是本项目大部分时间里所运行的那颗 Node。它的 release 说明推荐 `--jitless`，
+  **对这个构建来说那个建议是对的**：V8 在 iOS 上确实无法 JIT。本项目后来自己构建了
+  Node 并修好了这一点 —— 见 [`node-ios/`](node-ios/) —— 所以 `--jitless`
+  **不再需要**，二进制现在来自本仓库自己的 release。**致谢照旧**，
+  而且它仍然是这件事能存在的原因。
   校验和已固化在 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 * **交叉编译的 iOS 移植**（[`ddddddedcds/deepseek-harness-ios`](https://github.com/ddddddedcds/deepseek-harness-ios)
   `ios-port` 分支，及其配套的 [`Node.js-for-ios`](https://github.com/ddddddedcds/Node.js-for-ios)）。
