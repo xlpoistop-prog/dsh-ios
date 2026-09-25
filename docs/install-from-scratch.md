@@ -62,15 +62,15 @@ it is a **forwarder, not a server**, so OpenSSH still has to be installed.
 
 This is the one component that has to be a real iOS build. Two routes:
 
-### Route A — use an existing build (what this port does)
+### Route A — use the build this port publishes (what `bootstrap.sh` does)
 
-This port was developed against one specific build, and its provenance is pinned
-so it can be re-obtained rather than trusted:
+This port builds its own Node and publishes it, so its provenance is a release in
+this repository rather than someone else's:
 
 ```
-https://github.com/j0shua-SYSON/node-ios/releases/download/v22.19.0/node-v22.19.0-iphoneos-arm64
-size    74,851,216 bytes
-sha256  1f0975217902badb1919b6d6f5dfd9e1083e765f090766dab6d50f562044fbcc
+https://github.com/XLPOISTOP-prog/dsh-ios/releases/download/node-ios-v24.21.0-jit/node-v24.21.0-iphoneos-arm64
+size    79,707,248 bytes
+sha256  c3d667b8c4385086c150b7f495a5f8ded2e585be96b6bbd4b85f8df82c28bb62
 ```
 
 **Verify the checksum before using it.** If it does not match, stop — something
@@ -78,27 +78,44 @@ changed upstream, or the download was tampered with:
 
 ```sh
 # on the desktop
-curl -LO https://github.com/j0shua-SYSON/node-ios/releases/download/v22.19.0/node-v22.19.0-iphoneos-arm64
-sha256sum node-v22.19.0-iphoneos-arm64
-# expect: 1f0975217902badb1919b6d6f5dfd9e1083e765f090766dab6d50f562044fbcc
+curl -LO https://github.com/XLPOISTOP-prog/dsh-ios/releases/download/node-ios-v24.21.0-jit/node-v24.21.0-iphoneos-arm64
+sha256sum node-v24.21.0-iphoneos-arm64
+# expect: c3d667b8c4385086c150b7f495a5f8ded2e585be96b6bbd4b85f8df82c28bb62
 ```
+
+This build has a working JIT, which earlier builds of this port did not: patches
+04 and 05 in `node-ios/` implement the W^X hook V8 never got on iOS and repair a
+code page on the fault. See [`node-ios/README.md`](../node-ios/README.md). It
+needs **no** `--jitless`; set `DSH_JITLESS=1` only to fall back.
 
 Then stage it and push:
 
 ```sh
 # on the desktop — stage where the real filesystem is visible, then move it from
 # the device shell (see the note on jbroot paths above)
-pscp -pw <pw> node-v22.19.0-iphoneos-arm64 mobile@127.0.0.1:/rootfs/var/mobile/Documents/
+pscp -pw <pw> node-v24.21.0-iphoneos-arm64 mobile@127.0.0.1:/rootfs/var/mobile/Documents/
 ```
 
 ```sh
 # on the device
 cd /var/mobile/Documents/dsh-ios
-cp /rootfs/var/mobile/Documents/node-v22.19.0-iphoneos-arm64 node
+cp /rootfs/var/mobile/Documents/node-v24.21.0-iphoneos-arm64 node
 chmod 755 node
-NODE_OPTIONS=--jitless ./node --version     # expect v22.19.0
-NODE_OPTIONS=--jitless ./node -e "console.log(process.arch, process.platform)"
+ldid -Sscripts/entitlements.plist node     # signing is required on a jailbroken device
+./node --version                           # expect v24.21.0
+./node -e "console.log(process.arch, process.platform)"
 # expect: arm64 ios
+```
+
+Confirm JIT is actually on rather than assumed — the engine reports it:
+
+```sh
+./node --allow-natives-syntax -e '
+  const f = (a) => a + 1;
+  for (let i = 0; i < 1e5; i++) f(i);
+  console.log(%GetOptimizationStatus(f));
+'
+# non-zero, and not just the "interpreted" bit, means Turbofan/Maglev ran
 ```
 
 That build is MIT-licensed, and its maintainer describes it as *"the first public
